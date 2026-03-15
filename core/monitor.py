@@ -12,7 +12,7 @@ from urllib.parse import urlparse
 from pywinauto import Desktop
 
 from core.browser_bridge import BrowserStateStore
-from core.database import extend_latest_session, save_anchor
+from core.database import append_event
 
 
 user32 = ctypes.windll.user32
@@ -51,9 +51,8 @@ NOTIFICATION_TOKENS = {
 }
 MEMACT_WINDOW_TOKENS = {
     "memact",
-    "jump back",
-    "clear anchors",
-    "select an anchor first",
+    "ask memact",
+    "privacy promise",
 }
 
 
@@ -119,7 +118,6 @@ def get_active_window() -> WindowSnapshot | None:
     hwnd = user32.GetForegroundWindow()
     if not hwnd:
         return None
-
     title = _window_text(hwnd)
     if not title:
         return None
@@ -128,53 +126,35 @@ def get_active_window() -> WindowSnapshot | None:
     user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
     exe_path = _process_image_path(pid.value)
     app_name = os.path.basename(exe_path) if exe_path else "Unknown"
-    class_name = _class_name(hwnd)
-    ex_style = user32.GetWindowLongW(hwnd, GWL_EXSTYLE)
-
     return WindowSnapshot(
         hwnd=hwnd,
         title=title,
         app_name=app_name,
         exe_path=exe_path,
-        class_name=class_name,
-        ex_style=ex_style,
+        class_name=_class_name(hwnd),
+        ex_style=user32.GetWindowLongW(hwnd, GWL_EXSTYLE),
     )
 
 
 def should_capture_window(snapshot: WindowSnapshot) -> bool:
-    title = snapshot.title.strip()
+    title = snapshot.title.strip().lower()
+    app_lower = snapshot.app_name.lower()
     if not title:
         return False
-
-    title_lower = title.lower()
-    app_lower = snapshot.app_name.lower()
-
-    if title_lower in MEMACT_WINDOW_TOKENS:
+    if title in MEMACT_WINDOW_TOKENS:
         return False
-
     if snapshot.class_name in KNOWN_NOTIFICATION_CLASSES:
         return False
-
-    if app_lower in {"python.exe", "pythonw.exe"} and any(
-        token in title_lower for token in MEMACT_WINDOW_TOKENS
-    ):
+    if app_lower in {"python.exe", "pythonw.exe"} and any(token in title for token in MEMACT_WINDOW_TOKENS):
         return False
-
-    if title_lower.startswith("h.notifyicon_"):
+    if title.startswith("h.notifyicon_"):
         return False
-
-    if app_lower.endswith(".root") or ".root" in app_lower:
-        return False
-
     if app_lower in {"pickerhost.exe", "shellexperiencehost.exe"}:
         return False
-
     if snapshot.ex_style & WS_EX_TOOLWINDOW and app_lower not in BROWSERS:
         return False
-
-    if any(token in title_lower for token in NOTIFICATION_TOKENS):
+    if any(token in title for token in NOTIFICATION_TOKENS):
         return False
-
     return True
 
 
@@ -185,46 +165,40 @@ def _read_edit_value(control) -> str:
             return value.strip()
     except Exception:
         pass
-
     try:
         value = control.iface_value.CurrentValue
         if isinstance(value, str):
             return value.strip()
     except Exception:
         pass
-
-    try:
-        texts = control.texts()
-        if texts:
-            return texts[0].strip()
-    except Exception:
-        pass
-
-    return ""
-
-
-def _control_name(control) -> str:
-    try:
-        name = control.window_text()
-        if isinstance(name, str) and name.strip():
-            return name.strip()
-    except Exception:
-        pass
-
     try:
         texts = control.texts()
         if texts:
             return str(texts[0]).strip()
     except Exception:
         pass
+    return ""
 
+
+def _control_name(control) -> str:
     try:
-        name = control.element_info.name
-        if isinstance(name, str) and name.strip():
-            return name.strip()
+        value = control.window_text()
+        if isinstance(value, str) and value.strip():
+            return value.strip()
     except Exception:
         pass
-
+    try:
+        texts = control.texts()
+        if texts:
+            return str(texts[0]).strip()
+    except Exception:
+        pass
+    try:
+        value = control.element_info.name
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    except Exception:
+        pass
     return ""
 
 
@@ -245,26 +219,17 @@ def _is_generic_tab_title(title: str) -> bool:
 
 
 def _normalize_browser_title(window_title: str, url: str | None, selected_title: str | None) -> str:
-    def _pretty_title(value: str) -> str:
-        normalized = value.strip()
-        if normalized.lower() in {"newtab", "new tab"}:
-            return "New Tab"
-        return normalized
-
     if selected_title and not _is_generic_tab_title(selected_title):
-        return _pretty_title(selected_title)
-
+        return selected_title.strip()
     title_root = window_title.split(" - ")[0].strip()
-    vague_tokens = (" and ", "new tab", "start page", "about:blank")
-    if title_root and not any(token in title_root.lower() for token in vague_tokens):
-        return _pretty_title(title_root)
-
+    if title_root and " and " not in title_root.lower():
+        return title_root
     parsed = urlparse(url or "")
     if parsed.scheme == "file":
         return os.path.basename(parsed.path) or "Local file"
     if parsed.netloc:
         return parsed.netloc.removeprefix("www.")
-    return _pretty_title(title_root or window_title)
+    return window_title.strip()
 
 
 def get_browser_context(hwnd: int, app_name: str, window_title: str) -> BrowserContext:
@@ -287,11 +252,7 @@ def get_browser_context(hwnd: int, app_name: str, window_title: str) -> BrowserC
         seen_titles: set[str] = set()
         for control in window.descendants(control_type="TabItem"):
             title = _control_name(control)
-            if not title:
-                continue
-            if _is_generic_tab_title(title):
-                continue
-            if title in seen_titles:
+            if not title or _is_generic_tab_title(title) or title in seen_titles:
                 continue
             seen_titles.add(title)
             tab_titles.append(title)
@@ -300,8 +261,12 @@ def get_browser_context(hwnd: int, app_name: str, window_title: str) -> BrowserC
     except Exception:
         return BrowserContext(url=url, current_title=None, tab_titles=tab_titles, tab_urls=tab_urls)
 
-    current_title = _normalize_browser_title(window_title, url, selected_title)
-    return BrowserContext(url=url, current_title=current_title, tab_titles=tab_titles, tab_urls=tab_urls)
+    return BrowserContext(
+        url=url,
+        current_title=_normalize_browser_title(window_title, url, selected_title),
+        tab_titles=tab_titles,
+        tab_urls=tab_urls,
+    )
 
 
 def _browser_key(app_name: str) -> str:
@@ -319,17 +284,7 @@ def _browser_key(app_name: str) -> str:
     return ""
 
 
-def _session_window_title(snapshot: WindowSnapshot, browser_context: BrowserContext) -> str:
-    browser_key = _browser_key(snapshot.app_name)
-    if browser_key and (browser_context.tab_urls or browser_context.url):
-        return f"{browser_key}::browser-session"
-    return snapshot.title
-
-
-def _browser_context_from_extension(
-    snapshot: WindowSnapshot,
-    store: BrowserStateStore | None,
-) -> BrowserContext | None:
+def _browser_context_from_extension(snapshot: WindowSnapshot, store: BrowserStateStore | None) -> BrowserContext | None:
     if store is None:
         return None
     browser_key = _browser_key(snapshot.app_name)
@@ -350,19 +305,31 @@ def _browser_context_from_extension(
     )
 
 
+def _compose_content_text(snapshot: WindowSnapshot, browser_context: BrowserContext) -> str:
+    parts = [
+        browser_context.current_title or snapshot.title,
+        snapshot.title,
+        " ".join(browser_context.tab_titles[:8]),
+    ]
+    return " ".join(part.strip() for part in parts if part and part.strip())
+
+
 class WindowMonitor(threading.Thread):
     def __init__(
         self,
-        on_new_anchor=None,
+        on_new_event=None,
         poll_interval: float = 1.0,
+        heartbeat_interval: float = 20.0,
         browser_state_store: BrowserStateStore | None = None,
     ) -> None:
         super().__init__(daemon=True)
-        self.on_new_anchor = on_new_anchor
+        self.on_new_event = on_new_event
         self.poll_interval = poll_interval
+        self.heartbeat_interval = heartbeat_interval
         self.browser_state_store = browser_state_store
         self._stop_event = threading.Event()
         self._last_fingerprint: tuple[str, ...] | None = None
+        self._last_recorded_at = 0.0
         self._last_browser_probe_key: tuple[str, str] | None = None
         self._last_browser_probe_at = 0.0
         self._last_browser_probe_context = BrowserContext(
@@ -375,75 +342,52 @@ class WindowMonitor(threading.Thread):
     def stop(self) -> None:
         self._stop_event.set()
 
+    def _emit_event(self, snapshot: WindowSnapshot, browser_context: BrowserContext, interaction_type: str) -> None:
+        append_event(
+            application=snapshot.app_name,
+            window_title=snapshot.title,
+            url=browser_context.url,
+            interaction_type=interaction_type,
+            content_text=_compose_content_text(snapshot, browser_context),
+            exe_path=snapshot.exe_path,
+            tab_titles=browser_context.tab_titles,
+            tab_urls=browser_context.tab_urls,
+            source="monitor",
+        )
+        self._last_recorded_at = time.monotonic()
+        if self.on_new_event is not None:
+            self.on_new_event()
+
     def run(self) -> None:
         while not self._stop_event.is_set():
             try:
                 snapshot = get_active_window()
-                if snapshot is not None:
-                    if not should_capture_window(snapshot):
-                        time.sleep(self.poll_interval)
-                        continue
-                    browser_context = _browser_context_from_extension(
-                        snapshot,
-                        self.browser_state_store,
-                    )
+                if snapshot is not None and should_capture_window(snapshot):
+                    browser_context = _browser_context_from_extension(snapshot, self.browser_state_store)
                     if browser_context is None:
                         probe_key = (snapshot.app_name.lower(), snapshot.title)
                         now = time.monotonic()
-                        if (
-                            self._last_browser_probe_key == probe_key
-                            and now - self._last_browser_probe_at < 2.0
-                        ):
+                        if self._last_browser_probe_key == probe_key and now - self._last_browser_probe_at < 2.0:
                             browser_context = self._last_browser_probe_context
                         else:
-                            browser_context = get_browser_context(
-                                snapshot.hwnd,
-                                snapshot.app_name,
-                                snapshot.title,
-                            )
+                            browser_context = get_browser_context(snapshot.hwnd, snapshot.app_name, snapshot.title)
                             self._last_browser_probe_key = probe_key
                             self._last_browser_probe_at = now
                             self._last_browser_probe_context = browser_context
-                    context_title = browser_context.current_title or snapshot.title
-                    session_window_title = _session_window_title(
-                        snapshot,
-                        browser_context,
-                    )
+
                     fingerprint = (
                         snapshot.app_name.lower(),
-                        session_window_title.strip().lower(),
+                        snapshot.title.strip().lower(),
                         (browser_context.url or "").strip().lower(),
                         "|".join(browser_context.tab_titles[:6]).strip().lower(),
                         "|".join(browser_context.tab_urls[:6]).strip().lower(),
                     )
+                    now = time.monotonic()
                     if fingerprint != self._last_fingerprint:
                         self._last_fingerprint = fingerprint
-                        save_anchor(
-                            app_name=snapshot.app_name,
-                            window_title=session_window_title,
-                            context_title=context_title,
-                            url=browser_context.url,
-                            tab_snapshot=browser_context.tab_titles,
-                            tab_urls=browser_context.tab_urls,
-                            scroll_position=None,
-                            exe_path=snapshot.exe_path,
-                        )
-                        if self.on_new_anchor is not None:
-                            self.on_new_anchor()
-                    else:
-                        did_extend = extend_latest_session(
-                            app_name=snapshot.app_name,
-                            window_title=session_window_title,
-                            context_title=context_title,
-                            url=browser_context.url,
-                            tab_snapshot=browser_context.tab_titles,
-                            tab_urls=browser_context.tab_urls,
-                            scroll_position=None,
-                            exe_path=snapshot.exe_path,
-                        )
-                        if did_extend and self.on_new_anchor is not None:
-                            self.on_new_anchor()
+                        self._emit_event(snapshot, browser_context, "focus")
+                    elif now - self._last_recorded_at >= self.heartbeat_interval:
+                        self._emit_event(snapshot, browser_context, "heartbeat")
             except Exception:
                 pass
-
             time.sleep(self.poll_interval)

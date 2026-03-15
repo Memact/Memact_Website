@@ -1,86 +1,92 @@
 # MemAct
 
-MemAct is a minimal Windows desktop prototype that records lightweight workflow anchors and lets you jump back to them later.
+MemAct is a private desktop memory engine for personal actions.
 
-The app is intentionally simple:
+It continuously records local action events on your Windows machine, builds a local semantic memory index, and lets you ask natural-language questions such as:
+
+- What did I do yesterday evening?
+- When did I last use Chrome?
+- How much time did I spend on youtube.com today?
+- Did I look at the grocery order?
+
+MemAct is designed around one interaction:
+
+`Ask MemAct...`
+
+## Product principles
 
 - local only
-- no AI
-- no cloud
-- no analytics
+- no cloud services
+- no external APIs
+- no remote LLM calls
+- append-only event history
+- semantic search over actions, not dashboards
 
-## Project structure
+## Architecture
+
+The current product flow is:
 
 ```text
-memact/
-|-- main.py
-|-- requirements.txt
-|-- README.md
-|-- core/
-|   |-- __init__.py
-|   |-- database.py
-|   |-- monitor.py
-|   `-- restorer.py
-`-- ui/
-    |-- __init__.py
-    `-- main_window.py
+event capture
+-> event store
+-> local semantic embeddings
+-> semantic + lexical retrieval
+-> query engine
+-> answer + supporting evidence
 ```
 
-## What it captures
+### Event capture
 
-Every time the active window changes, MemAct stores an anchor in SQLite with:
+MemAct records raw action events such as:
 
 - timestamp
-- active window title
-- application name
-- browser tab URL for Chrome or Edge
-- browser tab lists when the MemAct browser extension is enabled
+- application
+- window title
+- URL when available
+- interaction type
+- captured content text when available
+- browser tab titles and URLs when the local extension is enabled
 
-The database is stored at:
+Events are appended to the local database and are not auto-mutated into sessions or groups.
+
+### Local memory engine
+
+The query engine uses local embeddings plus lexical retrieval to interpret open-ended questions.
+
+- If a local transformer model is available, MemAct uses it
+- If not, MemAct falls back to a deterministic local embedding path so the app remains private and functional
+
+## Interface
+
+The desktop app intentionally stays minimal:
+
+- `MemAct` title
+- one large centered search field
+- dynamic suggestions from recent activity
+- one clear answer
+- optional supporting details
+- top-right menu for setup and privacy actions
+
+## Browser extension
+
+MemAct includes a local extension in [extension/memact](C:\Users\sujay\Downloads\memact\extension\memact) for Chromium-based browsers.
+
+When enabled, it sends the current window's tab data to the local MemAct bridge at `http://127.0.0.1:38453`.
+
+No browser data is sent off-device.
+
+## Storage
+
+The local SQLite database lives at:
 
 `%USERPROFILE%\AppData\Local\Memact\memact.db`
-
-## Timeline UI
-
-The PyQt6 window shows anchors newest first, for example:
-
-```text
-2:14 PM - chrome - Wikipedia | https://en.wikipedia.org/wiki/Memory
-2:18 PM - notepad - Notes.txt
-2:22 PM - msedge - Google Search | https://www.google.com/
-```
-
-Double-clicking or selecting an item and pressing `Jump Back` restores it:
-
-- browser anchors reopen the saved URL
-- if the MemAct browser extension has provided tab URLs, MemAct reopens the saved tab set in Chrome or Edge
-- non-browser anchors try to relaunch the recorded application executable
-
-## Browser Extension
-
-MemAct includes a local browser extension in:
-
-`extension/memact/`
-
-On first launch, MemAct detects installed Chrome and Edge browsers and shows a setup dialog.
-
-The setup flow:
-
-- launches the selected browser with the unpacked extension path
-- opens the browser's extension management page
-- opens the extension folder locally
-
-Important:
-
-- Chrome and Edge do not allow a normal desktop app to silently persist-install an unpacked extension
-- the browser may still require final confirmation on its extension screen
-- once enabled, the extension sends focused-window tab URLs to MemAct over `http://127.0.0.1:38453`
 
 ## Dependencies
 
 - Python 3.11+
 - PyQt6
 - pywinauto
+- sentence-transformers
 
 Install with:
 
@@ -96,6 +102,6 @@ python main.py
 
 ## Notes
 
-- This is a proof-of-concept Windows prototype.
-- Scroll position capture is best-effort and depends on what the target app exposes through Windows accessibility APIs.
-- Restoring non-browser applications only relaunches the application. It does not yet restore the exact document, cursor position, or scroll state.
+- This is a Windows-first prototype.
+- The semantic engine is fully local.
+- Exact app restoration is no longer the main product promise; MemAct is focused on remembering and answering questions about actions.
