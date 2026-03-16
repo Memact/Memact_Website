@@ -44,7 +44,7 @@ async function snapshotFocusedWindow() {
       })
     });
   } catch (error) {
-    // Keep the extension silent when MemAct is not running.
+    // Keep the extension silent when Memact is not running.
   }
 }
 

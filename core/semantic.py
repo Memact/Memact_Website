@@ -4,10 +4,30 @@ import hashlib
 import math
 import re
 from functools import lru_cache
+from pathlib import Path
 
 
 _TOKEN_PATTERN = re.compile(r"[a-z0-9]+")
 _EMBED_DIM = 256
+_LOCAL_MODEL_NAME = "sentence-transformers/all-MiniLM-L6-v2"
+
+
+def _local_model_candidates() -> list[Path]:
+    home = Path.home()
+    return [
+        home / ".cache" / "huggingface" / "hub" / "models--sentence-transformers--all-MiniLM-L6-v2",
+        home / ".cache" / "torch" / "sentence_transformers" / _LOCAL_MODEL_NAME,
+        home / "AppData" / "Local" / "huggingface" / "hub" / "models--sentence-transformers--all-MiniLM-L6-v2",
+        home / "AppData" / "Local" / "sentence_transformers" / _LOCAL_MODEL_NAME,
+    ]
+
+
+@lru_cache(maxsize=1)
+def _has_local_transformer_model() -> bool:
+    for candidate in _local_model_candidates():
+        if candidate.exists():
+            return True
+    return False
 
 
 def normalize_text(value: str) -> str:
@@ -34,11 +54,13 @@ def _hash_embedding(text: str) -> list[float]:
 
 @lru_cache(maxsize=1)
 def _transformer_backend():
+    if not _has_local_transformer_model():
+        return None
     try:
         from sentence_transformers import SentenceTransformer  # type: ignore
 
         model = SentenceTransformer(
-            "sentence-transformers/all-MiniLM-L6-v2",
+            _LOCAL_MODEL_NAME,
             local_files_only=True,
         )
         return model

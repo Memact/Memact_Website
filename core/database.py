@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import sqlite3
+import shutil
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -10,7 +11,8 @@ from urllib.parse import urlparse
 from core.semantic import embed_text
 
 
-APP_DIR = Path.home() / "AppData" / "Local" / "Memact"
+APP_DIR = Path.home() / "AppData" / "Local" / "memact"
+LEGACY_APP_DIR = Path.home() / "AppData" / "Local" / "Memact"
 DB_PATH = APP_DIR / "memact.db"
 
 
@@ -67,6 +69,9 @@ Anchor = Event
 
 def get_connection() -> sqlite3.Connection:
     APP_DIR.mkdir(parents=True, exist_ok=True)
+    legacy_db = LEGACY_APP_DIR / "memact.db"
+    if not DB_PATH.exists() and legacy_db.exists():
+        shutil.copy2(legacy_db, DB_PATH)
     connection = sqlite3.connect(DB_PATH)
     connection.row_factory = sqlite3.Row
     return connection

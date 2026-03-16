@@ -1,6 +1,6 @@
-# MemAct
+# Memact
 
-MemAct is a private desktop memory engine for personal actions.
+Memact is a private desktop memory engine for personal actions.
 
 It continuously records local action events on your Windows machine, builds a local semantic memory index, and lets you ask natural-language questions such as:
 
@@ -9,9 +9,9 @@ It continuously records local action events on your Windows machine, builds a lo
 - How much time did I spend on youtube.com today?
 - Did I look at the grocery order?
 
-MemAct is designed around one interaction:
+Memact is designed around one interaction:
 
-`Ask MemAct...`
+`Ask Memact...`
 
 ## Product principles
 
@@ -37,7 +37,7 @@ event capture
 
 ### Event capture
 
-MemAct records raw action events such as:
+Memact records raw action events such as:
 
 - timestamp
 - application
@@ -53,14 +53,14 @@ Events are appended to the local database and are not auto-mutated into sessions
 
 The query engine uses local embeddings plus lexical retrieval to interpret open-ended questions.
 
-- If a local transformer model is available, MemAct uses it
-- If not, MemAct falls back to a deterministic local embedding path so the app remains private and functional
+- If a local transformer model is available, Memact uses it
+- If not, Memact falls back to a deterministic local embedding path so the app remains private and functional
 
 ## Interface
 
 The desktop app intentionally stays minimal:
 
-- `MemAct` title
+- `memact` wordmark
 - one large centered search field
 - dynamic suggestions from recent activity
 - one clear answer
@@ -69,9 +69,9 @@ The desktop app intentionally stays minimal:
 
 ## Browser extension
 
-MemAct includes a local extension in [extension/memact](C:\Users\sujay\Downloads\memact\extension\memact) for Chromium-based browsers.
+Memact includes a local extension in [extension/memact](C:\Users\sujay\Downloads\memact\extension\memact) for Chromium-based browsers.
 
-When enabled, it sends the current window's tab data to the local MemAct bridge at `http://127.0.0.1:38453`.
+When enabled, it sends the current window's tab data to the local Memact bridge at `http://127.0.0.1:38453`.
 
 No browser data is sent off-device.
 
@@ -79,7 +79,7 @@ No browser data is sent off-device.
 
 The local SQLite database lives at:
 
-`%USERPROFILE%\AppData\Local\Memact\memact.db`
+`%USERPROFILE%\AppData\Local\memact\memact.db`
 
 ## Dependencies
 
@@ -104,4 +104,4 @@ python main.py
 
 - This is a Windows-first prototype.
 - The semantic engine is fully local.
-- Exact app restoration is no longer the main product promise; MemAct is focused on remembering and answering questions about actions.
+- Exact app restoration is no longer the main product promise; Memact is focused on remembering and answering questions about actions.

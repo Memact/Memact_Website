@@ -1,22 +1,21 @@
 from __future__ import annotations
 
-from pathlib import Path
 import webbrowser
 
 from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QIcon
 from PyQt6.QtWidgets import (
     QDialog,
     QFrame,
     QHBoxLayout,
     QLabel,
     QPushButton,
-    QTextBrowser,
     QVBoxLayout,
     QWidget,
 )
 
 from core.browser_setup import BrowserInstall
+from ui.branding import app_icon
+from ui.fonts import body_font
 from ui.window_effects import apply_native_window_theme
 
 
@@ -24,7 +23,6 @@ class BrowserSetupDialog(QDialog):
     def __init__(
         self,
         browsers: list[BrowserInstall],
-        icon_path: Path,
         on_setup,
         is_browser_ready=None,
         parent=None,
@@ -34,10 +32,10 @@ class BrowserSetupDialog(QDialog):
         self.on_setup = on_setup
         self.is_browser_ready = is_browser_ready or (lambda _browser: False)
         self.setModal(True)
-        self.setWindowTitle("MemAct Browser Setup")
-        self.setMinimumWidth(440)
-        if icon_path.exists():
-            self.setWindowIcon(QIcon(str(icon_path)))
+        self.setWindowTitle("Memact browser setup")
+        self.setMinimumWidth(560)
+        self.setFont(body_font(12))
+        self.setWindowIcon(app_icon())
 
         self.setStyleSheet(
             """
@@ -47,56 +45,103 @@ class BrowserSetupDialog(QDialog):
             QWidget#Root {
                 background: #000543;
                 color: #ffffff;
-                font-family: "Segoe UI";
             }
-            QFrame#Card {
-                background: rgba(255, 255, 255, 0.04);
-                border: 1px solid rgba(0, 56, 255, 0.55);
+            QFrame#Panel {
+                background: rgba(255, 255, 255, 0.07);
+                border: 1px solid rgba(255, 255, 255, 0.16);
                 border-radius: 24px;
             }
             QLabel#Eyebrow {
-                color: rgba(255, 255, 255, 0.7);
-                font-size: 12px;
+                color: rgba(255, 255, 255, 0.62);
+                font-size: 11px;
                 font-weight: 700;
                 letter-spacing: 1px;
             }
             QLabel#Title {
                 color: #ffffff;
-                font-size: 30px;
-                font-weight: 700;
+                font-size: 28px;
             }
             QLabel#Body {
                 color: rgba(255, 255, 255, 0.84);
-                font-size: 14px;
+                font-size: 16px;
+            }
+            QFrame#StepCard {
+                background: rgba(255, 255, 255, 0.05);
+                border: 1px solid rgba(255, 255, 255, 0.14);
+                border-radius: 16px;
+            }
+            QLabel#StepIndex {
+                color: #ffffff;
+                background: #0038ff;
+                border-radius: 12px;
+                padding: 4px 8px;
+                min-width: 10px;
+                font-size: 13px;
+                font-weight: 700;
+            }
+            QLabel#StepText {
+                color: #ffffff;
+                font-size: 15px;
             }
             QFrame#BrowserTile {
-                background: rgba(255, 255, 255, 0.04);
-                border: 1px solid rgba(0, 56, 255, 0.38);
+                background: rgba(255, 255, 255, 0.05);
+                border: 1px solid rgba(255, 255, 255, 0.16);
                 border-radius: 18px;
             }
             QLabel#BrowserName {
                 color: #ffffff;
-                font-size: 17px;
-                font-weight: 700;
+                font-size: 18px;
             }
             QLabel#BrowserMeta {
-                color: rgba(255, 255, 255, 0.8);
+                color: rgba(255, 255, 255, 0.76);
+                font-size: 14px;
+            }
+            QLabel#BrowserUrl {
+                color: rgba(255, 255, 255, 0.6);
                 font-size: 13px;
+            }
+            QLabel#ReadyBadge {
+                color: #ffffff;
+                background: rgba(255, 255, 255, 0.08);
+                border: 1px solid rgba(255, 255, 255, 0.18);
+                border-radius: 12px;
+                padding: 4px 10px;
+                font-size: 12px;
+                font-weight: 700;
             }
             QPushButton {
                 background: #0038ff;
                 color: #ffffff;
-                border: 1px solid rgba(173, 199, 255, 0.72);
+                border: 1px solid #0038ff;
                 border-radius: 14px;
                 padding: 10px 18px;
-                font-size: 13px;
-                font-weight: 600;
+                font-size: 14px;
             }
             QPushButton:hover {
-                background: #1a4fff;
+                background: rgba(0, 56, 255, 0.84);
             }
-            QPushButton:pressed {
-                background: #0029bf;
+            QPushButton#SecondaryButton {
+                background: rgba(255, 255, 255, 0.05);
+                border: 1px solid rgba(255, 255, 255, 0.16);
+            }
+            QPushButton#SecondaryButton:hover {
+                background: rgba(255, 255, 255, 0.1);
+            }
+            QScrollBar:vertical {
+                background: transparent;
+                width: 10px;
+                margin: 4px 2px 4px 2px;
+            }
+            QScrollBar::handle:vertical {
+                background: rgba(255, 255, 255, 0.22);
+                border-radius: 5px;
+                min-height: 24px;
+            }
+            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical,
+            QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {
+                background: transparent;
+                border: none;
+                height: 0;
             }
             """
         )
@@ -104,80 +149,56 @@ class BrowserSetupDialog(QDialog):
         root = QWidget(self)
         root.setObjectName("Root")
         outer = QVBoxLayout(root)
-        outer.setContentsMargins(18, 18, 18, 18)
+        outer.setContentsMargins(24, 24, 24, 24)
+        outer.setSpacing(16)
 
-        card = QFrame()
-        card.setObjectName("Card")
-        card_layout = QVBoxLayout(card)
-        card_layout.setContentsMargins(20, 20, 20, 20)
-        card_layout.setSpacing(14)
+        panel = QFrame()
+        panel.setObjectName("Panel")
+        panel_layout = QVBoxLayout(panel)
+        panel_layout.setContentsMargins(24, 24, 24, 24)
+        panel_layout.setSpacing(16)
 
-        eyebrow = QLabel("BROWSER SETUP")
+        eyebrow = QLabel("LOCAL EXTENSION SETUP")
         eyebrow.setObjectName("Eyebrow")
-        title = QLabel("Install the MemAct extension")
+
+        title = QLabel("Connect your browser")
         title.setObjectName("Title")
+        title.setFont(body_font(22))
+
         body = QLabel(
-            "Choose a detected browser to open the MemAct extension setup. The browser still controls the final install and enable step."
+            "Pick a browser once. Memact will open the extensions page and the local folder so you can finish setup in a familiar flow."
         )
         body.setObjectName("Body")
         body.setWordWrap(True)
 
-        card_layout.addWidget(eyebrow)
-        card_layout.addWidget(title)
-        card_layout.addWidget(body)
+        panel_layout.addWidget(eyebrow)
+        panel_layout.addWidget(title)
+        panel_layout.addWidget(body)
 
-        instructions = QTextBrowser()
-        instructions.setOpenExternalLinks(True)
-        instructions.setObjectName("Instructions")
-        instructions.setHtml(
-            """
-            <b>Manual install flow</b><br><br>
-            1. Click <b>Set Up</b> for your browser.<br>
-            2. MemAct opens the browser extension page and the local extension folder.<br>
-            3. Turn on <b>Developer mode</b> if your browser requires it.<br>
-            4. Choose <b>Load unpacked</b> and select the <code>extension/memact</code> folder if the browser does not load it automatically.<br>
-            5. Pin the extension and keep the browser open once so MemAct can receive tab data.<br><br>
-            If you skip this now, you can reopen setup later from the <b>three-dot menu</b> in MemAct.
-            """
-        )
-        instructions.setMaximumHeight(132)
-        instructions.setStyleSheet(
-            """
-            QTextBrowser {
-                background: rgba(255, 255, 255, 0.04);
-                border: 1px solid rgba(0, 56, 255, 0.28);
-                border-radius: 16px;
-                color: #ffffff;
-                padding: 12px;
-                font-size: 13px;
-            }
-            QTextBrowser QScrollBar:vertical {
-                background: transparent;
-                width: 10px;
-            }
-            QTextBrowser QScrollBar::handle:vertical {
-                background: #0038ff;
-                border-radius: 5px;
-                min-height: 24px;
-            }
-            """
-        )
-        card_layout.addWidget(instructions)
+        steps_wrap = QVBoxLayout()
+        steps_wrap.setSpacing(10)
+        steps_wrap.addWidget(self._step_card("1", "Open setup for your browser."))
+        steps_wrap.addWidget(self._step_card("2", "Enable Developer mode if your browser asks for it."))
+        steps_wrap.addWidget(self._step_card("3", "Choose Load unpacked and select extension/memact if needed."))
+        panel_layout.addLayout(steps_wrap)
 
         for browser in browsers:
-            card_layout.addWidget(self._browser_tile(browser))
+            panel_layout.addWidget(self._browser_tile(browser))
 
-        skip_row = QHBoxLayout()
-        help_button = QPushButton("Open Browser Help")
+        footer = QHBoxLayout()
+        footer.setSpacing(10)
+        help_button = QPushButton("Open browser help")
+        help_button.setObjectName("SecondaryButton")
         help_button.clicked.connect(self._open_help_for_first_browser)
-        skip_row.addWidget(help_button)
-        skip_row.addStretch(1)
-        skip_button = QPushButton("Later")
-        skip_button.clicked.connect(self.accept)
-        skip_row.addWidget(skip_button)
-        card_layout.addLayout(skip_row)
+        later_button = QPushButton("Later")
+        later_button.setObjectName("SecondaryButton")
+        later_button.clicked.connect(self.accept)
+        footer.addWidget(help_button)
+        footer.addStretch(1)
+        footer.addWidget(later_button)
+        panel_layout.addLayout(footer)
 
-        outer.addWidget(card)
+        outer.addWidget(panel)
 
         dialog_layout = QVBoxLayout(self)
         dialog_layout.setContentsMargins(0, 0, 0, 0)
@@ -187,33 +208,63 @@ class BrowserSetupDialog(QDialog):
         super().showEvent(event)
         apply_native_window_theme(self)
 
+    def _step_card(self, index: str, text: str) -> QFrame:
+        card = QFrame()
+        card.setObjectName("StepCard")
+        layout = QHBoxLayout(card)
+        layout.setContentsMargins(14, 12, 14, 12)
+        layout.setSpacing(12)
+        badge = QLabel(index)
+        badge.setObjectName("StepIndex")
+        badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        label = QLabel(text)
+        label.setObjectName("StepText")
+        label.setWordWrap(True)
+        layout.addWidget(badge, 0, Qt.AlignmentFlag.AlignTop)
+        layout.addWidget(label, 1)
+        return card
+
     def _browser_tile(self, browser: BrowserInstall) -> QFrame:
         tile = QFrame()
         tile.setObjectName("BrowserTile")
         layout = QHBoxLayout(tile)
-        layout.setContentsMargins(16, 14, 16, 14)
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(14)
 
         text_col = QVBoxLayout()
-        text_col.setSpacing(4)
+        text_col.setSpacing(6)
+
+        title_row = QHBoxLayout()
+        title_row.setSpacing(8)
         name = QLabel(browser.name)
         name.setObjectName("BrowserName")
+        title_row.addWidget(name)
         if self.is_browser_ready(browser):
-            meta_text = "Extension detected and talking to MemAct"
+            ready = QLabel("Ready")
+            ready.setObjectName("ReadyBadge")
+            title_row.addWidget(ready)
+        title_row.addStretch(1)
+
+        if self.is_browser_ready(browser):
+            meta_text = "Extension detected and connected to Memact."
         elif browser.supported:
-            meta_text = "Detected on this PC"
+            meta_text = "Detected locally. Memact can guide setup."
         else:
-            meta_text = "Detected, but automatic setup is not supported for this browser"
+            meta_text = "Detected locally, but automatic setup is not supported."
+
         meta = QLabel(meta_text)
         meta.setObjectName("BrowserMeta")
-        text_col.addWidget(name)
-        text_col.addWidget(meta)
+        meta.setWordWrap(True)
 
         url_label = QLabel(browser.extensions_url)
-        url_label.setObjectName("BrowserMeta")
+        url_label.setObjectName("BrowserUrl")
         url_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+
+        text_col.addLayout(title_row)
+        text_col.addWidget(meta)
         text_col.addWidget(url_label)
 
-        setup_button = QPushButton("Set Up")
+        setup_button = QPushButton("Open setup")
         setup_button.setEnabled(browser.supported)
         setup_button.clicked.connect(
             lambda _checked=False, selected=browser: self._handle_setup(selected)

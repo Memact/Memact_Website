@@ -1,14 +1,21 @@
 from __future__ import annotations
 
 import json
+import shutil
 from pathlib import Path
 
 
-APP_DIR = Path.home() / "AppData" / "Local" / "Memact"
+APP_DIR = Path.home() / "AppData" / "Local" / "memact"
+LEGACY_APP_DIR = Path.home() / "AppData" / "Local" / "Memact"
 SETTINGS_PATH = APP_DIR / "settings.json"
 
 
 def load_settings() -> dict:
+    if not SETTINGS_PATH.exists():
+        legacy_path = LEGACY_APP_DIR / "settings.json"
+        if legacy_path.exists():
+            APP_DIR.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(legacy_path, SETTINGS_PATH)
     if not SETTINGS_PATH.exists():
         return {}
     try:
@@ -23,4 +30,3 @@ def save_settings(settings: dict) -> None:
         json.dumps(settings, indent=2, sort_keys=True),
         encoding="utf-8",
     )
-

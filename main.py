@@ -1,10 +1,10 @@
 import os
 import sys
 import warnings
-from pathlib import Path
 
 os.environ.setdefault("QT_ENABLE_HIGHDPI_SCALING", "0")
 os.environ.setdefault("QT_AUTO_SCREEN_SCALE_FACTOR", "0")
+os.environ.setdefault("QT_QPA_PLATFORM", "windows:dpiawareness=0")
 
 warnings.filterwarnings(
     "ignore",
@@ -12,23 +12,21 @@ warnings.filterwarnings(
     module="pywinauto",
 )
 
-from PyQt6.QtGui import QIcon
 from PyQt6.QtWidgets import QApplication
 
 sys.coinit_flags = 2
 
+from ui.fonts import body_font
+from ui.branding import app_icon
 from ui.main_window import MainWindow
 
 
 def main() -> int:
     app = QApplication(sys.argv)
-    app.setApplicationName("MemAct")
+    app.setApplicationName("Memact")
+    app.setFont(body_font(12))
     app.setQuitOnLastWindowClosed(False)
-    base_dir = Path(__file__).resolve().parent
-
-    icon_path = base_dir / "assets" / "memact_icon.svg"
-    if icon_path.exists():
-        app.setWindowIcon(QIcon(str(icon_path)))
+    app.setWindowIcon(app_icon())
 
     window = MainWindow()
     window.show()
