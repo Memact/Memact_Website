@@ -457,8 +457,12 @@ class MainWindow(QMainWindow):
             }
             QLabel#CompactBrand {
                 color: #ffffff;
-                font-size: 42px;
+                font-size: 46px;
                 font-weight: 700;
+            }
+            QFrame#ResultsDivider {
+                background: rgba(255, 255, 255, 0.2);
+                border-radius: 1px;
             }
             QLineEdit#SearchInput {
                 background: transparent;
@@ -745,7 +749,7 @@ class MainWindow(QMainWindow):
         self.compact_brand = QLabel("m")
         self.compact_brand.setObjectName("CompactBrand")
         self.compact_brand.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        compact_brand_font = brand_font(34)
+        compact_brand_font = brand_font(38)
         compact_brand_font.setBold(True)
         self.compact_brand.setFont(compact_brand_font)
         brand_layout.addWidget(self.compact_brand, 0, Qt.AlignmentFlag.AlignCenter)
@@ -762,9 +766,13 @@ class MainWindow(QMainWindow):
         results_left_layout = QHBoxLayout(self.results_left_controls)
         results_left_layout.setContentsMargins(0, 0, 0, 0)
         results_left_layout.setSpacing(14)
+        self.results_divider = QFrame()
+        self.results_divider.setObjectName("ResultsDivider")
+        self.results_divider.setFixedSize(1, 32)
         results_left_layout.addWidget(self.compact_brand_host, 0, Qt.AlignmentFlag.AlignVCenter)
         results_left_layout.addWidget(self.back_orb, 0, Qt.AlignmentFlag.AlignVCenter)
         results_left_layout.addWidget(self.reload_orb, 0, Qt.AlignmentFlag.AlignVCenter)
+        results_left_layout.addWidget(self.results_divider, 0, Qt.AlignmentFlag.AlignVCenter)
         self.results_menu_orb = QFrame()
         self.results_menu_orb.setObjectName("MenuOrb")
         self.results_menu_orb.setFixedSize(orb_size, orb_size)
@@ -778,7 +786,11 @@ class MainWindow(QMainWindow):
         self.results_right_controls = QWidget()
         right_controls_layout = QHBoxLayout(self.results_right_controls)
         right_controls_layout.setContentsMargins(0, 0, 0, 0)
-        right_controls_layout.setSpacing(0)
+        right_controls_layout.setSpacing(14)
+        self.results_menu_divider = QFrame()
+        self.results_menu_divider.setObjectName("ResultsDivider")
+        self.results_menu_divider.setFixedSize(1, 32)
+        right_controls_layout.addWidget(self.results_menu_divider, 0, Qt.AlignmentFlag.AlignVCenter)
         right_controls_layout.addWidget(self.results_menu_orb, 0, Qt.AlignmentFlag.AlignVCenter)
 
         results_header_layout.addWidget(
@@ -1156,6 +1168,8 @@ class MainWindow(QMainWindow):
         show_back = bool(self.search_input.text().strip()) or self.answer_card.isVisible()
         self.back_orb.setVisible(show_back)
         self.reload_orb.setVisible(show_back)
+        if hasattr(self, "results_divider"):
+            self.results_divider.setVisible(show_back)
 
     def _menu_stylesheet(self) -> str:
         return """
@@ -1177,7 +1191,7 @@ class MainWindow(QMainWindow):
             }
             QMenu::separator {
                 height: 1px;
-                background: rgba(255, 255, 255, 0.12);
+                background: rgba(255, 255, 255, 0.2);
                 margin: 8px 10px;
             }
         """
@@ -1273,7 +1287,11 @@ class MainWindow(QMainWindow):
         spacing = self.results_header_layout.horizontalSpacing()
         center_available = max(1, available - left_width - right_width - (spacing * 2))
         min_width = min(self._min_content_width, center_available)
-        home_width = clamp(int(available * 0.80), min_width, center_available)
+        if self._results_mode:
+            home_width = clamp(int(available * 0.82), min_width, center_available)
+        else:
+            home_ratio = 0.68 if self.isMaximized() else 0.72
+            home_width = clamp(int(available * home_ratio), min_width, center_available)
 
         if self._results_mode:
             answer_max = available
