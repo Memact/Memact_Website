@@ -3,15 +3,27 @@ from __future__ import annotations
 import json
 import re
 import math
+import threading
 from collections import Counter
 from dataclasses import dataclass
 from datetime import date, datetime, time, timedelta
 from difflib import SequenceMatcher
 from urllib.parse import urlparse
 
-from core.database import Event, lexical_candidates, list_events_around, list_events_between, list_recent_events
+from core.database import (
+    Event,
+    lexical_candidates,
+    list_events_around,
+    list_events_between,
+    list_events_by_ids,
+    list_recent_events,
+)
 from core.engine_client import engine_candidates, first_available
+from core.meaning_extractor import extract_query_meaning, warmup_spacy
 from core.semantic import cosine_similarity, embed_text, tokenize
+from core.skill_loader import Skill, get_skills
+from core.skill_router import route_skill
+from core.vector_store import ensure_seeded, is_available as chroma_available, query_event_ids, upsert_events
 
 
 _STOP_WORDS = {
@@ -161,6 +173,21 @@ class QueryAnswer:
     time_scope_label: str | None
     result_count: int
     related_queries: list[str]
+
+
+@dataclass(slots=True)
+class GraphNode:
+    id: str
+    label: str
+    kind: str
+
+
+@dataclass(slots=True)
+class GraphEdge:
+    source: str
+    target: str
+    relation: str
+    weight: float
 
 
 def _parse_timestamp(value: str) -> datetime:
@@ -559,6 +586,184 @@ def _meaningful_tokens(text: str) -> list[str]:
     return [token for token in tokenize(text) if token not in _STOP_WORDS]
 
 
+def _skill_filters(skill: Skill | None) -> set[str]:
+    if not skill:
+        return set()
+    return {value.casefold() for value in skill.filters if value}
+
+
+def _skill_result_limit(skill: Skill | None) -> int | None:
+    if not skill or not skill.instructions:
+        return None
+    text = skill.instructions.casefold()
+    if "single most recent" in text or "single most recent event" in text or "single event" in text:
+        return 1
+    match = re.search(r"top\s+(\d+)", text)
+    if match:
+        try:
+            return max(int(match.group(1)), 1)
+        except ValueError:
+            return None
+    return None
+
+
+def _filter_content_matches(events: list[Event], query: str) -> list[Event]:
+    tokens = _meaningful_tokens(query)
+    if not tokens:
+        return events
+    required = 1 if len(tokens) <= 2 else 2
+    filtered: list[Event] = []
+    for event in events:
+        searchable = (event.searchable_text or "").casefold()
+        matches = sum(1 for token in tokens if token in searchable)
+        if matches >= required:
+            filtered.append(event)
+    return filtered
+
+
+def _apply_skill_priority_to_spans(priority: str | None, spans: list[ActivitySpan]) -> list[ActivitySpan]:
+    if not priority or priority.casefold() != "recency":
+        return spans
+    return sorted(spans, key=lambda span: (span.start_at, span.relevance), reverse=True)
+
+
+def _rerank_spans_for_intent(
+    spans: list[ActivitySpan],
+    intent_categories: list[tuple[str, float]],
+    *,
+    query: str,
+    target_domains: set[str],
+    app_hint: str | None,
+) -> list[ActivitySpan]:
+    if not spans or not intent_categories:
+        return spans
+    if target_domains or app_hint:
+        return spans
+    intent_names = {name for name, _score in intent_categories}
+    scored: list[tuple[float, int, ActivitySpan]] = []
+    for index, span in enumerate(spans):
+        score = span.relevance
+        if span.activity_category and span.activity_category in intent_names and span.activity_confidence >= 0.44:
+            score += 0.18
+        if span.duration_seconds >= 120:
+            score += min(span.duration_seconds / 1200.0, 0.16)
+        if span.attention_cue:
+            score += 0.06
+        if "Moved from" in span.session_flow or "Coding session" in span.session_flow:
+            score += 0.08
+        scored.append((score, -index, span))
+    scored.sort(key=lambda item: (item[0], item[1]), reverse=True)
+    return [item[2] for item in scored]
+
+
+def _intent_category_candidates(query: str, query_embedding: list[float]) -> list[tuple[str, float]]:
+    scores: list[tuple[str, float]] = []
+    for name, embedding in _activity_category_embeddings().items():
+        scores.append((name, cosine_similarity(query_embedding, embedding)))
+    scores.sort(key=lambda item: item[1], reverse=True)
+    tokens = tokenize(query)
+    if "work" in tokens or "working" in tokens:
+        for name in ("coding", "writing", "reading", "searching", "organizing", "emailing"):
+            if not any(candidate == name for candidate, _ in scores):
+                scores.append((name, 0.34))
+    filtered = [(name, score) for name, score in scores if score >= 0.32]
+    return filtered[:3]
+
+
+def _intent_bonus_for_event(event: Event, intent_categories: list[tuple[str, float]]) -> float:
+    if not intent_categories:
+        return 0.0
+    scores = _activity_semantic_scores(event)
+    if not scores:
+        return 0.0
+    best_name = max(scores, key=scores.get)
+    best_score = scores[best_name]
+    intent_names = {name for name, _ in intent_categories}
+    if best_name not in intent_names or best_score < 0.34:
+        return 0.0
+    return 0.08 + (best_score * 0.12)
+
+
+def _expanded_query_tokens(query: str, intent_categories: list[tuple[str, float]]) -> list[str]:
+    tokens = _meaningful_tokens(query)
+    for name, _score in intent_categories:
+        if name not in tokens:
+            tokens.append(name)
+    return tokens
+
+
+def _coerce_app_hint(app_hint: str | None, events: list[Event]) -> str | None:
+    if not app_hint or not events:
+        return app_hint
+    target = app_hint.casefold()
+    candidates = {_friendly_app_name(event.application) for event in events}
+    for candidate in sorted(candidates, key=len, reverse=True):
+        candidate_key = candidate.casefold()
+        if candidate_key == target:
+            return candidate
+        if candidate_key in target or target in candidate_key:
+            return candidate
+    return app_hint
+
+
+def _build_chroma_where(
+    *,
+    skill_filters: set[str],
+    start_at: datetime | None,
+    end_at: datetime | None,
+    target_domains: set[str],
+    app_hint: str | None,
+) -> dict | None:
+    clauses: list[dict] = []
+    if "timestamp_range" in skill_filters and (start_at or end_at):
+        range_filter: dict[str, int] = {}
+        if start_at:
+            range_filter["$gte"] = int(start_at.timestamp())
+        if end_at:
+            range_filter["$lte"] = int(end_at.timestamp())
+        clauses.append({"occurred_at_unix": range_filter})
+    if "app_or_domain" in skill_filters:
+        if target_domains:
+            domain_filters = [{"domain": domain} for domain in target_domains]
+            if len(domain_filters) == 1:
+                clauses.append(domain_filters[0])
+            else:
+                clauses.append({"$or": domain_filters})
+        elif app_hint:
+            clauses.append({"app_name": app_hint.casefold()})
+    if not clauses:
+        return None
+    if len(clauses) == 1:
+        return clauses[0]
+    return {"$and": clauses}
+
+
+_WARMUP_STARTED = False
+
+
+def _start_background_warmup() -> None:
+    global _WARMUP_STARTED
+    if _WARMUP_STARTED:
+        return
+    _WARMUP_STARTED = True
+
+    def _warmup() -> None:
+        try:
+            warmup_spacy()
+        except Exception:
+            pass
+        try:
+            embed_text("warmup")
+        except Exception:
+            pass
+        if chroma_available():
+            try:
+                ensure_seeded(list_recent_events(limit=2000))
+            except Exception:
+                pass
+
+    threading.Thread(target=_warmup, daemon=True).start()
+
 def _time_window_for_query(query: str) -> tuple[datetime | None, datetime | None, str | None]:
     text = query.lower()
     today = date.today()
@@ -648,6 +853,18 @@ def _load_candidate_events(query: str, start_at: datetime | None, end_at: dateti
     return combined
 
 
+def _merge_event_pools(*pools: list[Event]) -> list[Event]:
+    combined: list[Event] = []
+    seen_ids: set[int] = set()
+    for pool in pools:
+        for event in pool:
+            if event.id in seen_ids:
+                continue
+            combined.append(event)
+            seen_ids.add(event.id)
+    return combined
+
+
 def _idf_by_token(events: list[Event]) -> dict[str, float]:
     document_frequency: Counter[str] = Counter()
     for event in events:
@@ -683,9 +900,12 @@ def _rank_events(
     *,
     target_domains: set[str] | None = None,
     app_hint: str | None = None,
+    query_embedding: list[float] | None = None,
+    query_tokens: list[str] | None = None,
+    intent_categories: list[tuple[str, float]] | None = None,
 ) -> list[EventMatch]:
-    query_tokens = _meaningful_tokens(query)
-    query_embedding = embed_text(query)
+    query_tokens = query_tokens or _meaningful_tokens(query)
+    query_embedding = query_embedding or embed_text(query)
     normalized_query = " ".join(tokenize(query))
     idf = _idf_by_token(events)
     now = datetime.now()
@@ -725,6 +945,7 @@ def _rank_events(
             else 0.0
         )
         heartbeat_penalty = -0.05 if "heartbeat" in interaction else 0.0
+        intent_bonus = _intent_bonus_for_event(event, intent_categories or [])
         score = (
             (semantic_score * 0.56)
             + (min(lexical_score, 4.0) * 0.16)
@@ -736,6 +957,7 @@ def _rank_events(
             + recency_bonus
             + action_bonus
             + heartbeat_penalty
+            + intent_bonus
         )
         if target_domains and not domain_match:
             if semantic_score < 0.45 and lexical_score < 0.5 and fuzzy_score < 0.6:
@@ -1323,33 +1545,36 @@ def _flow_phrase(span: ActivitySpan) -> str:
     flow = span.session_flow.strip()
     lowered = flow.casefold()
     if lowered.startswith("coding session:"):
-        return f"you were in a coding session: {flow.split(':', 1)[1].strip()}"
+        detail = flow.split(":", 1)[1].strip()
+        if detail and not detail.casefold().startswith("you "):
+            detail = "you " + detail
+        return f"were in a coding session where {detail}"
     mappings = (
-        ("Browsing ", "you were browsing "),
-        ("Using ", "you were using "),
-        ("Working on ", "you were working on "),
-        ("Working in ", "you were working in "),
-        ("Started in ", "you started in "),
-        ("Moved from ", "you moved from "),
-        ("Opened ", "you opened "),
-        ("Switched to ", "you switched to "),
-        ("Chatting in ", "you were chatting in "),
-        ("Messaging in ", "you were messaging in "),
-        ("Emailing in ", "you were emailing in "),
-        ("Coding in ", "you were coding in "),
-        ("Typing in ", "you were typing in "),
-        ("Writing in ", "you were writing in "),
-        ("Reading ", "you were reading "),
-        ("Scrolling ", "you were scrolling "),
-        ("Watching ", "you were watching "),
-        ("Searching ", "you were searching "),
-        ("Coding on ", "you were coding on "),
-        ("Organizing in ", "you were organizing in "),
+        ("Browsing ", "browsed "),
+        ("Using ", "used "),
+        ("Working on ", "worked on "),
+        ("Working in ", "worked in "),
+        ("Started in ", "started in "),
+        ("Moved from ", "moved from "),
+        ("Opened ", "opened "),
+        ("Switched to ", "switched to "),
+        ("Chatting in ", "chatted in "),
+        ("Messaging in ", "messaged in "),
+        ("Emailing in ", "emailed in "),
+        ("Coding in ", "coded in "),
+        ("Typing in ", "typed in "),
+        ("Writing in ", "wrote in "),
+        ("Reading ", "read "),
+        ("Scrolling ", "scrolled "),
+        ("Watching ", "watched "),
+        ("Searching ", "searched "),
+        ("Coding on ", "coded on "),
+        ("Organizing in ", "organized in "),
     )
     for prefix, replacement in mappings:
         if flow.startswith(prefix):
             return replacement + flow.removeprefix(prefix)
-    return f"you were in {flow.lower()}"
+    return f"were in {flow.lower()}"
 
 
 def _memory_summary(
@@ -1361,7 +1586,7 @@ def _memory_summary(
     pieces: list[str] = []
     if time_scope:
         pieces.append(f"In {time_scope},")
-    pieces.append(f"the strongest local moment suggests {_flow_phrase(span)}")
+    pieces.append(f"the strongest local moment suggests you {_flow_phrase(span)}")
     if include_context:
         hint = _moment_hint(span)
         if hint:
@@ -1396,7 +1621,216 @@ def _query_summary(spans: list[ActivitySpan], time_scope: str | None) -> str:
         return count_text
     if len(labels) == 1:
         return f"{count_text}. Best match: {labels[0]}."
+    if len(labels) == 2:
+        return f"{count_text}. Top matches include {labels[0]} and {labels[1]}."
     return f"{count_text}. Top matches include {', '.join(labels[:-1])}, and {labels[-1]}."
+
+
+def _label_tokens(label: str) -> set[str]:
+    return {token for token in tokenize(label) if token not in _STOP_WORDS and len(token) >= 3}
+
+
+def _activity_relation(span: ActivitySpan) -> str:
+    if span.activity_mode == "typing":
+        return "edited"
+    if span.activity_mode == "scrolling":
+        return "scrolled"
+    if span.activity_category == "chatting":
+        return "chatted in"
+    if span.activity_category == "emailing":
+        return "emailed"
+    if span.activity_category == "coding":
+        return "worked on"
+    if span.activity_category == "writing":
+        return "wrote"
+    if span.activity_category == "reading":
+        return "read"
+    if span.activity_category == "watching":
+        return "watched"
+    if span.activity_category == "searching":
+        return "searched"
+    return "opened"
+
+
+def _build_activity_graph(spans: list[ActivitySpan]) -> tuple[list[GraphNode], list[GraphEdge]]:
+    nodes: dict[str, GraphNode] = {}
+    edges: list[GraphEdge] = []
+    user_id = "user:you"
+    nodes[user_id] = GraphNode(id=user_id, label="You", kind="user")
+
+    ordered = sorted(spans, key=lambda span: span.start_at)
+    label_tokens_map: dict[str, set[str]] = {}
+
+    def add_node(node_id: str, label: str, kind: str) -> None:
+        if node_id not in nodes:
+            nodes[node_id] = GraphNode(id=node_id, label=label, kind=kind)
+
+    for span in ordered:
+        label = _flow_label(span) or _display_label(span)
+        if not label:
+            continue
+        label_id = f"item:{label.casefold()}"
+        add_node(label_id, label, "item")
+        label_tokens_map[label_id] = _label_tokens(label)
+        app_name = _friendly_app_name(span.application)
+        app_id = f"app:{app_name.casefold()}"
+        add_node(app_id, app_name, "app")
+        domain = _domain(span.url)
+        if domain:
+            domain_id = f"domain:{domain.casefold()}"
+            add_node(domain_id, domain, "domain")
+            edges.append(GraphEdge(source=label_id, target=domain_id, relation="on", weight=1.0))
+        if span.activity_category and span.activity_confidence >= 0.44:
+            cat = span.activity_category
+            cat_id = f"activity:{cat}"
+            add_node(cat_id, cat.title(), "activity")
+            edges.append(GraphEdge(source=label_id, target=cat_id, relation="is", weight=1.0))
+
+        edges.append(GraphEdge(source=user_id, target=label_id, relation=_activity_relation(span), weight=1.0))
+        edges.append(GraphEdge(source=label_id, target=app_id, relation="in", weight=1.0))
+
+    for prev, curr in zip(ordered, ordered[1:]):
+        gap = (curr.start_at - prev.end_at).total_seconds()
+        if gap < 0 or gap > 45 * 60:
+            continue
+        prev_label = _flow_label(prev)
+        curr_label = _flow_label(curr)
+        if not prev_label or not curr_label:
+            continue
+        prev_id = f"item:{prev_label.casefold()}"
+        curr_id = f"item:{curr_label.casefold()}"
+        if prev_id != curr_id:
+            edges.append(GraphEdge(source=prev_id, target=curr_id, relation="then", weight=1.0))
+
+    label_ids = list(label_tokens_map.keys())
+    for idx, left_id in enumerate(label_ids):
+        left_tokens = label_tokens_map[left_id]
+        if not left_tokens:
+            continue
+        for right_id in label_ids[idx + 1 :]:
+            right_tokens = label_tokens_map[right_id]
+            if len(left_tokens & right_tokens) >= 2:
+                edges.append(GraphEdge(source=left_id, target=right_id, relation="related", weight=0.6))
+
+    return list(nodes.values()), edges
+
+
+def _graph_summary(
+    spans: list[ActivitySpan],
+    *,
+    query: str,
+    time_scope: str | None,
+    intent_categories: list[tuple[str, float]],
+) -> tuple[str, str]:
+    if not spans:
+        return (
+            "I do not have enough local activity yet to answer that clearly.",
+            "Try a clearer app name, site, or time window like today, yesterday evening, or around 3 PM.",
+        )
+    ordered = sorted(spans, key=lambda span: span.start_at)
+    nodes, edges = _build_activity_graph(ordered)
+    label_by_id = {node.id: node.label for node in nodes}
+    label_scores: dict[str, float] = {}
+    category_scores: dict[str, float] = {}
+    app_by_label: dict[str, set[str]] = {}
+    transitions: dict[tuple[str, str], int] = {}
+    related_pairs: set[tuple[str, str]] = set()
+
+    for edge in edges:
+        if edge.relation == "then":
+            src = label_by_id.get(edge.source)
+            dst = label_by_id.get(edge.target)
+            if src and dst:
+                transitions[(src, dst)] = transitions.get((src, dst), 0) + 1
+        elif edge.relation == "related":
+            src = label_by_id.get(edge.source)
+            dst = label_by_id.get(edge.target)
+            if src and dst:
+                related_pairs.add((src, dst))
+
+    for span in ordered:
+        label = _flow_label(span)
+        if label:
+            weight = max(span.duration_seconds, 30)
+            label_scores[label] = label_scores.get(label, 0.0) + weight
+            app_by_label.setdefault(label, set()).add(_friendly_app_name(span.application))
+        if span.activity_category and span.activity_confidence >= 0.44:
+            category_scores[span.activity_category] = category_scores.get(span.activity_category, 0.0) + max(
+                span.duration_seconds, 30
+            )
+
+    intent_names = {name for name, _ in intent_categories}
+    if intent_names:
+        category_scores = {
+            name: score for name, score in category_scores.items() if name in intent_names
+        } or category_scores
+
+    top_categories = [name for name, _ in sorted(category_scores.items(), key=lambda item: item[1], reverse=True)][:3]
+    top_labels = [name for name, _ in sorted(label_scores.items(), key=lambda item: item[1], reverse=True)][:3]
+    if not top_labels:
+        top_labels = [_friendly_app_name(span.application) for span in ordered[:3]]
+
+    query_tokens = _meaningful_tokens(query)
+    topic_match = None
+    for label in top_labels:
+        if _label_tokens(label) & set(query_tokens):
+            topic_match = label
+            break
+
+    scope = f"In {time_scope}, " if time_scope else ""
+    summary_parts: list[str] = []
+    related_labels: list[str] = []
+    if topic_match:
+        apps = sorted(app_by_label.get(topic_match, set()))
+        related_labels = [
+            other
+            for a, b in related_pairs
+            for other in (a, b)
+            if topic_match in (a, b) and other != topic_match
+        ]
+        if not related_labels:
+            related_labels = [
+                label
+                for label in top_labels
+                if label != topic_match and len(_label_tokens(label) & _label_tokens(topic_match)) >= 2
+            ]
+        if apps:
+            answer = f"{scope}you focused on {topic_match} across {', '.join(apps)}."
+        else:
+            answer = f"{scope}you focused on {topic_match} in your recent history."
+    elif top_categories:
+        if len(top_categories) == 1:
+            answer = f"{scope}you mostly focused on {top_categories[0]}."
+        else:
+            answer = f"{scope}you mostly focused on {top_categories[0]} and {top_categories[1]}."
+    else:
+        if len(top_labels) == 1:
+            answer = f"{scope}the closest match was {top_labels[0]}."
+        elif len(top_labels) == 2:
+            answer = f"{scope}closest matches were {top_labels[0]} and {top_labels[1]}."
+        else:
+            answer = f"{scope}closest matches were {', '.join(top_labels[:-1])}, and {top_labels[-1]}."
+
+    if related_labels:
+        summary_parts.append(f"Related items included {', '.join(related_labels[:2])}.")
+    if transitions:
+        (src, dst), count = sorted(transitions.items(), key=lambda item: item[1], reverse=True)[0]
+        if count >= 1:
+            summary_parts.append(f"Common transition: {src} -> {dst}.")
+    if not summary_parts:
+        summary_parts.append("These are the closest local moments I could find based on your activity history.")
+    summary = " ".join(summary_parts)
+    return answer[0].upper() + answer[1:], summary
+
+
+def _fallback_memory_answer(
+    spans: list[ActivitySpan],
+    time_scope: str | None,
+    *,
+    query: str,
+    intent_categories: list[tuple[str, float]],
+) -> tuple[str, str]:
+    return _graph_summary(spans, query=query, time_scope=time_scope, intent_categories=intent_categories)
 
 
 def _duration_summary(
@@ -1472,10 +1906,62 @@ def answer_query(query: str) -> QueryAnswer:
             related_queries=[],
         )
 
-    start_at, end_at, time_scope = _time_window_for_query(query)
-    candidates = _load_candidate_events(query, start_at, end_at)
-    target_domains = _extract_domains(query)
-    app_hint = _extract_app_hint(query, candidates)
+    _start_background_warmup()
+
+    meaning = extract_query_meaning(query)
+    base_query_text = meaning.embedding_text() or query
+    query_vector = embed_text(base_query_text)
+    intent_categories = _intent_category_candidates(query, query_vector)
+    if intent_categories:
+        expanded_text = f"{base_query_text} {' '.join(name for name, _ in intent_categories)}"
+        query_vector = embed_text(expanded_text)
+
+    skills = get_skills()
+    active_skill = route_skill(query, skills)
+    skill_filters = _skill_filters(active_skill)
+    skill_priority = active_skill.priority if active_skill else None
+    skill_limit = _skill_result_limit(active_skill)
+    evidence_limit = skill_limit or 6
+    time_probe = meaning.time_text or query
+    start_at, end_at, time_scope = _time_window_for_query(time_probe)
+    target_domains = {meaning.domain} if meaning.domain else _extract_domains(query)
+    app_hint = meaning.app
+
+    base_candidates: list[Event] = []
+    candidates: list[Event] = []
+    chroma_events: list[Event] = []
+    if chroma_available():
+        where = _build_chroma_where(
+            skill_filters=skill_filters,
+            start_at=start_at,
+            end_at=end_at,
+            target_domains=target_domains,
+            app_hint=app_hint,
+        )
+        chroma_ids = query_event_ids(query_vector, where=where, limit=240)
+        if chroma_ids:
+            chroma_events = list_events_by_ids(chroma_ids)
+            try:
+                upsert_events(chroma_events)
+            except Exception:
+                pass
+    fallback_events: list[Event] = []
+    if not chroma_events or len(chroma_events) < 80:
+        fallback_events = _load_candidate_events(query, start_at, end_at)
+    base_candidates = _merge_event_pools(chroma_events, fallback_events)
+    candidates = base_candidates or fallback_events
+    if "content_match" in skill_filters:
+        content_filtered = _filter_content_matches(base_candidates, query)
+        if content_filtered:
+            candidates = content_filtered
+    if app_hint:
+        app_hint = _coerce_app_hint(app_hint, candidates)
+        if app_hint and not any(_event_matches_app(event, app_hint) for event in candidates):
+            app_hint = None
+    if not app_hint:
+        app_hint = _extract_app_hint(query, candidates) or _extract_app_hint(query, base_candidates)
+
+    expanded_tokens = _expanded_query_tokens(query, intent_categories)
     filtered_candidates = _filter_events(
         candidates,
         target_domains=target_domains,
@@ -1486,6 +1972,9 @@ def answer_query(query: str) -> QueryAnswer:
         filtered_candidates,
         target_domains=target_domains,
         app_hint=app_hint,
+        query_embedding=query_vector,
+        query_tokens=expanded_tokens,
+        intent_categories=intent_categories,
     )
     if not ranked and filtered_candidates is not candidates:
         ranked = _rank_events(
@@ -1493,6 +1982,19 @@ def answer_query(query: str) -> QueryAnswer:
             candidates,
             target_domains=target_domains,
             app_hint=app_hint,
+            query_embedding=query_vector,
+            query_tokens=expanded_tokens,
+            intent_categories=intent_categories,
+        )
+    if not ranked and candidates is not base_candidates:
+        ranked = _rank_events(
+            query,
+            base_candidates,
+            target_domains=target_domains,
+            app_hint=app_hint,
+            query_embedding=query_vector,
+            query_tokens=expanded_tokens,
+            intent_categories=intent_categories,
         )
     if not ranked:
         return QueryAnswer(
@@ -1509,6 +2011,14 @@ def answer_query(query: str) -> QueryAnswer:
     spans = _build_spans(
         ranked,
         all_events=filtered_candidates,
+        target_domains=target_domains,
+        app_hint=app_hint,
+    )
+    spans = _apply_skill_priority_to_spans(skill_priority, spans)
+    spans = _rerank_spans_for_intent(
+        spans,
+        intent_categories,
+        query=query,
         target_domains=target_domains,
         app_hint=app_hint,
     )
@@ -1536,7 +2046,7 @@ def answer_query(query: str) -> QueryAnswer:
         if domain_spans:
             relevant_spans = domain_spans
 
-    query_category = _query_activity_category(query)
+    query_category = meaning.activity_type or _query_activity_category(query)
     if query_category:
         if query_category in {"typing", "scrolling"}:
             category_spans = [span for span in spans if span.activity_mode == query_category]
@@ -1544,6 +2054,9 @@ def answer_query(query: str) -> QueryAnswer:
             category_spans = [span for span in spans if span.activity_category == query_category]
         if category_spans:
             relevant_spans = category_spans
+
+    if skill_limit:
+        relevant_spans = relevant_spans[:skill_limit]
 
     summary = _query_summary(relevant_spans, time_scope)
     related_queries = _build_related_queries(
@@ -1554,11 +2067,17 @@ def answer_query(query: str) -> QueryAnswer:
         app_hint=app_hint,
     )
     if intent in {"open", "listing"} and _low_confidence(relevant_spans):
+        fallback_answer, fallback_summary = _fallback_memory_answer(
+            relevant_spans,
+            time_scope,
+            query=query,
+            intent_categories=intent_categories,
+        )
         return QueryAnswer(
-            answer="I do not have a strong local memory for that yet.",
-            summary="These are the closest local moments I could find.",
+            answer=fallback_answer,
+            summary=fallback_summary,
             details_label="Show closest matches",
-            evidence=relevant_spans[:6],
+            evidence=relevant_spans[:evidence_limit],
             time_scope_label=time_scope,
             result_count=len(ranked),
             related_queries=related_queries,
@@ -1574,6 +2093,9 @@ def answer_query(query: str) -> QueryAnswer:
             anchor_candidates,
             target_domains=anchor_domains,
             app_hint=anchor_app_hint,
+            query_embedding=embed_text(contextual_anchor),
+            query_tokens=_meaningful_tokens(contextual_anchor),
+            intent_categories=None,
         )
         anchor_spans = (
             _build_spans(
@@ -1661,7 +2183,7 @@ def answer_query(query: str) -> QueryAnswer:
             answer=answer,
             summary=detail_summary,
             details_label="Show top matches",
-            evidence=duration_spans[:6],
+            evidence=duration_spans[:evidence_limit],
             time_scope_label=time_scope,
             result_count=len(ranked),
             related_queries=related_queries,
@@ -1674,7 +2196,7 @@ def answer_query(query: str) -> QueryAnswer:
             answer=answer,
             summary=_memory_summary(span, time_scope, include_context=not bool(target_domains)),
             details_label="Show top matches",
-            evidence=relevant_spans[:6],
+            evidence=relevant_spans[:evidence_limit],
             time_scope_label=time_scope,
             result_count=len(ranked),
             related_queries=related_queries,
@@ -1694,7 +2216,7 @@ def answer_query(query: str) -> QueryAnswer:
                     answer="I do not have clear evidence for that.",
                     summary=summary,
                     details_label="Show closest matches",
-                    evidence=relevant_spans[:6],
+                    evidence=relevant_spans[:evidence_limit],
                     time_scope_label=time_scope,
                     result_count=len(ranked),
                     related_queries=related_queries,
@@ -1707,13 +2229,13 @@ def answer_query(query: str) -> QueryAnswer:
             answer = f"Yes, most likely around {_format_clock(strongest.start_at)}."
         else:
             summary = (
-                f"I did not find a strong signal, but the closest local moment suggests {_flow_phrase(strongest)}."
+                f"I did not find a strong signal, but the closest local moment suggests you {_flow_phrase(strongest)}."
             )
         return QueryAnswer(
             answer=answer,
             summary=summary,
             details_label="Show top matches",
-            evidence=relevant_spans[:6],
+            evidence=relevant_spans[:evidence_limit],
             time_scope_label=time_scope,
             result_count=len(ranked),
             related_queries=related_queries,
@@ -1736,7 +2258,7 @@ def answer_query(query: str) -> QueryAnswer:
             answer=answer,
             summary=summary,
             details_label="Show top matches",
-            evidence=relevant_spans[:6],
+            evidence=relevant_spans[:evidence_limit],
             time_scope_label=time_scope,
             result_count=len(ranked),
             related_queries=related_queries,
@@ -1758,7 +2280,7 @@ def answer_query(query: str) -> QueryAnswer:
         if not labels:
             labels = [_friendly_app_name(span.application) for span in top_spans[:2]]
         if len(labels) == 1:
-            answer = f"I found a local moment where {_flow_phrase(top_spans[0])}."
+            answer = f"I found a local moment where you {_flow_phrase(top_spans[0])}."
         elif len(labels) == 2:
             answer = f"I found local moments around {labels[0].lower()} and {labels[1].lower()}."
         else:
@@ -1774,7 +2296,7 @@ def answer_query(query: str) -> QueryAnswer:
         answer=answer,
         summary=summary,
         details_label="Show top matches",
-        evidence=relevant_spans[:6],
+        evidence=relevant_spans[:evidence_limit],
         time_scope_label=time_scope,
         result_count=len(ranked),
         related_queries=related_queries,
@@ -2000,3 +2522,9 @@ def autocomplete_suggestions(prefix: str, limit: int = 5) -> list[SearchSuggesti
         if len(deduped) >= limit:
             break
     return deduped
+
+
+try:
+    _start_background_warmup()
+except Exception:
+    pass

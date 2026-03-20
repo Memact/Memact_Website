@@ -1,6 +1,6 @@
 Memact
 
-Version: v0.1
+Version: v0.2
 
 Memact is a searchable memory of your activity.
 
@@ -121,6 +121,7 @@ Requirements:
 - PyQt6
 - pywinauto
 - sentence-transformers
+  - Note: `sentence-transformers` pulls in PyTorch (large download). If you want a lighter setup, you can remove it from `requirements.txt` and Memact will fall back to its local deterministic embedding path.
 
 Install:
 
@@ -138,6 +139,23 @@ Notes
 - fully local system
 - focused on remembering and finding your activity
 - not a workflow automation tool
+- if the compiled Go engine is not built or running, Memact automatically falls back to the pure-Python path
+
+---
+
+Go engine (optional)
+
+Requirements:
+
+- Go 1.22+
+
+Build:
+
+scripts\build_engine.ps1
+
+Run:
+
+scripts\run_engine.ps1
 
 ---
 

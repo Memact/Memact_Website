@@ -331,6 +331,8 @@ def append_event(
         tab_urls=tab_urls,
     )
     embedding_json = json.dumps(embed_text(searchable_text), ensure_ascii=True)
+    tab_titles_json = _encode_json_list(tab_titles)
+    tab_urls_json = _encode_json_list(tab_urls)
     with get_connection() as connection:
         cursor = connection.execute(
             """
@@ -357,8 +359,8 @@ def append_event(
                 interaction_type,
                 content_text,
                 exe_path,
-                _encode_json_list(tab_titles),
-                _encode_json_list(tab_urls),
+                tab_titles_json,
+                tab_urls_json,
                 searchable_text,
                 embedding_json,
                 source,
@@ -367,7 +369,58 @@ def append_event(
         event_id = int(cursor.lastrowid)
         _sync_event_fts(connection, event_id)
         connection.commit()
+    try:
+        from core.vector_store import upsert_events
+
+        event = Event(
+            id=event_id,
+            occurred_at=timestamp,
+            application=application,
+            window_title=window_title,
+            url=url,
+            interaction_type=interaction_type,
+            content_text=content_text,
+            exe_path=exe_path,
+            tab_titles_json=tab_titles_json,
+            tab_urls_json=tab_urls_json,
+            searchable_text=searchable_text,
+            embedding_json=embedding_json,
+            source=source,
+        )
+        upsert_events([event])
+    except Exception:
+        pass
     return event_id
+
+
+def list_events_by_ids(ids: list[int]) -> list[Event]:
+    if not ids:
+        return []
+    placeholders = ", ".join("?" for _ in ids)
+    with get_connection() as connection:
+        rows = connection.execute(
+            f"""
+            SELECT
+                id,
+                occurred_at,
+                application,
+                window_title,
+                url,
+                interaction_type,
+                content_text,
+                exe_path,
+                tab_titles_json,
+                tab_urls_json,
+                searchable_text,
+                embedding_json,
+                source
+            FROM events
+            WHERE id IN ({placeholders})
+            """,
+            tuple(ids),
+        ).fetchall()
+    by_id = {int(row["id"]): Event(**dict(row)) for row in rows}
+    return [by_id[event_id] for event_id in ids if event_id in by_id]
 
 
 def list_recent_events(limit: int = 400) -> list[Event]:
@@ -436,6 +489,33 @@ def list_events_between(
             LIMIT ?
             """,
             tuple(params),
+        ).fetchall()
+    return [Event(**dict(row)) for row in rows]
+
+
+def list_events_batch(*, offset: int = 0, limit: int = 1000) -> list[Event]:
+    with get_connection() as connection:
+        rows = connection.execute(
+            """
+            SELECT
+                id,
+                occurred_at,
+                application,
+                window_title,
+                url,
+                interaction_type,
+                content_text,
+                exe_path,
+                tab_titles_json,
+                tab_urls_json,
+                searchable_text,
+                embedding_json,
+                source
+            FROM events
+            ORDER BY occurred_at ASC, id ASC
+            LIMIT ? OFFSET ?
+            """,
+            (limit, offset),
         ).fetchall()
     return [Event(**dict(row)) for row in rows]
 

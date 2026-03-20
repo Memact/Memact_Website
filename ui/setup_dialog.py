@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import webbrowser
 
@@ -40,10 +40,10 @@ class BrowserSetupDialog(QDialog):
         self.setStyleSheet(
             """
             QDialog {
-                background: #000543;
+                background: #00011B;
             }
             QWidget#Root {
-                background: #000543;
+                background: #00011B;
                 color: #ffffff;
             }
             QFrame#Panel {
@@ -72,8 +72,8 @@ class BrowserSetupDialog(QDialog):
             }
             QLabel#StepIndex {
                 color: #ffffff;
-                background: rgba(121, 173, 255, 0.22);
-                border: 1px solid rgba(121, 173, 255, 0.35);
+                background: rgba(40, 74, 128, 0.22);
+                border: 1px solid rgba(40, 74, 128, 0.35);
                 border-radius: 12px;
                 padding: 4px 8px;
                 min-width: 10px;
@@ -111,15 +111,15 @@ class BrowserSetupDialog(QDialog):
                 font-weight: 700;
             }
             QPushButton {
-                background: rgba(121, 173, 255, 0.22);
+                background: rgba(40, 74, 128, 0.22);
                 color: #ffffff;
-                border: 1px solid rgba(121, 173, 255, 0.35);
+                border: 1px solid rgba(40, 74, 128, 0.35);
                 border-radius: 14px;
                 padding: 10px 18px;
                 font-size: 14px;
             }
             QPushButton:hover {
-                background: rgba(121, 173, 255, 0.3);
+                background: rgba(40, 74, 128, 0.3);
             }
             QPushButton#SecondaryButton {
                 background: rgba(255, 255, 255, 0.05);

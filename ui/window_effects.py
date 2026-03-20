@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import ctypes
 
@@ -17,7 +17,7 @@ def _colorref(color: QColor) -> int:
 
 def apply_native_window_theme(
     widget: QWidget,
-    background: str = "#000543",
+    background: str = "#00011B",
     text: str = "#ffffff",
 ) -> None:
     if not widget.winId():

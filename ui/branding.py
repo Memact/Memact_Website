@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 from pathlib import Path
 
@@ -28,7 +28,7 @@ def app_icon(size: int = 256) -> QIcon:
     painter = QPainter(pixmap)
     painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
     painter.setRenderHint(QPainter.RenderHint.TextAntialiasing, True)
-    painter.setBrush(QColor("#000543"))
+    painter.setBrush(QColor("#00011B"))
     painter.setPen(Qt.PenStyle.NoPen)
     painter.drawRoundedRect(0, 0, size, size, size * 0.22, size * 0.22)
 

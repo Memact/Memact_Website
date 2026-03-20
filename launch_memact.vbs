@@ -1,3 +1,5 @@
 Set shell = CreateObject("WScript.Shell")
-shell.CurrentDirectory = "C:\Users\sujay\Downloads\memact"
-shell.Run """C:\Users\sujay\AppData\Local\Programs\Python\Python312\pythonw.exe"" ""C:\Users\sujay\Downloads\memact\main.py""", 0, False
+Set fso = CreateObject("Scripting.FileSystemObject")
+root = fso.GetParentFolderName(WScript.ScriptFullName)
+shell.CurrentDirectory = root
+shell.Run "pythonw """ & root & "\main.py""", 0, False

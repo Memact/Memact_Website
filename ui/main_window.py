@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import logging
 import threading
@@ -319,7 +319,7 @@ class GlassInfoDialog(QDialog):
         self.setStyleSheet(
             """
             QDialog {
-                background: #000543;
+                background: #00011B;
                 color: #ffffff;
             }
             QFrame#DialogPanel {
@@ -346,16 +346,16 @@ class GlassInfoDialog(QDialog):
                 font-weight: 600;
             }
             QPushButton {
-                background: rgba(121, 173, 255, 0.22);
+                background: rgba(40, 74, 128, 0.22);
                 color: #ffffff;
-                border: 1px solid rgba(121, 173, 255, 0.35);
+                border: 1px solid rgba(40, 74, 128, 0.35);
                 border-radius: 14px;
                 padding: 10px 18px;
                 min-width: 110px;
                 font-size: 15px;
             }
             QPushButton:hover {
-                background: rgba(121, 173, 255, 0.3);
+                background: rgba(40, 74, 128, 0.3);
             }
             """
         )
@@ -471,7 +471,7 @@ class MainWindow(QMainWindow):
         self.setStyleSheet(
             """
             QMainWindow {
-                background: #000543;
+                background: #00011B;
             }
             QWidget#Root {
                 background: transparent;
@@ -505,7 +505,7 @@ class MainWindow(QMainWindow):
                 font-weight: 700;
             }
             QFrame#ResultsDivider {
-                background: rgba(255, 255, 255, 0.2);
+                background: rgba(255, 255, 255, 0.32);
                 border-radius: 1px;
             }
             QLineEdit#SearchInput {
@@ -514,7 +514,7 @@ class MainWindow(QMainWindow):
                 border: none;
                 padding: 0;
                 font-size: 24px;
-                selection-background-color: rgba(121, 173, 255, 0.35);
+                selection-background-color: rgba(40, 74, 128, 0.35);
             }
             QLineEdit#SearchInput[empty="true"] {
                 color: rgba(255, 255, 255, 0.56);
@@ -535,7 +535,7 @@ class MainWindow(QMainWindow):
                 border-radius: 12px;
             }
             QFrame#SuggestionDock {
-                background: rgba(5, 16, 79, 0.975);
+                background: rgba(0, 1, 27, 0.975);
                 border: 1px solid rgba(255, 255, 255, 0.14);
                 border-top: none;
                 border-top-left-radius: 0px;
@@ -612,7 +612,7 @@ class MainWindow(QMainWindow):
             }
             QFrame#SearchShell[active="true"] {
                 background: rgba(255, 255, 255, 0.14);
-                border: 1px solid rgba(121, 173, 255, 0.45);
+                border: 1px solid rgba(40, 74, 128, 0.45);
             }
             QFrame#SearchShell[attached="true"] {
                 border-bottom: none;
@@ -650,7 +650,7 @@ class MainWindow(QMainWindow):
                 text-align: left;
             }
             QPushButton#DetailsButton:hover {
-                color: rgba(121, 173, 255, 0.95);
+                color: rgba(170, 194, 230, 0.95);
             }
             QScrollArea#EvidenceScroll {
                 background: transparent;
@@ -670,30 +670,30 @@ class MainWindow(QMainWindow):
                 font-weight: 600;
             }
             QLabel#EvidenceChip {
-                background: rgba(121, 173, 255, 0.12);
+                background: rgba(40, 74, 128, 0.12);
                 color: rgba(255, 255, 255, 0.88);
-                border: 1px solid rgba(121, 173, 255, 0.22);
+                border: 1px solid rgba(40, 74, 128, 0.22);
                 border-radius: 11px;
                 padding: 4px 10px;
                 font-size: 11px;
                 font-weight: 600;
             }
             QLabel#EvidenceMeta {
-                color: rgba(121, 173, 255, 0.92);
+                color: rgba(170, 194, 230, 0.92);
                 font-size: 12px;
                 font-weight: 600;
             }
             QPushButton#EvidenceLinkButton {
-                background: rgba(121, 173, 255, 0.12);
+                background: rgba(40, 74, 128, 0.12);
                 color: #ffffff;
-                border: 1px solid rgba(121, 173, 255, 0.24);
+                border: 1px solid rgba(40, 74, 128, 0.24);
                 border-radius: 12px;
                 padding: 6px 12px;
                 font-size: 12px;
                 font-weight: 600;
             }
             QPushButton#EvidenceLinkButton:hover {
-                background: rgba(121, 173, 255, 0.2);
+                background: rgba(40, 74, 128, 0.2);
             }
             QLabel#EvidenceAttention {
                 color: rgba(255, 255, 255, 0.76);
@@ -701,7 +701,7 @@ class MainWindow(QMainWindow):
                 font-weight: 600;
             }
             QLabel#EvidenceActivity {
-                color: rgba(198, 214, 255, 0.86);
+                color: rgba(176, 200, 236, 0.86);
                 font-size: 12px;
                 font-weight: 600;
             }
@@ -710,7 +710,7 @@ class MainWindow(QMainWindow):
                 font-size: 14px;
             }
             QLabel#EvidenceMoment {
-                color: rgba(121, 173, 255, 0.94);
+                color: rgba(170, 194, 230, 0.94);
                 font-size: 13px;
                 font-weight: 600;
             }
@@ -1039,8 +1039,27 @@ class MainWindow(QMainWindow):
         self.status_text.setObjectName("StatusText")
         self.status_text.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
+        self.results_separator = QWidget()
+        self.results_separator.setSizePolicy(
+            QSizePolicy.Policy.Expanding,
+            QSizePolicy.Policy.Fixed,
+        )
+        separator_layout = QVBoxLayout(self.results_separator)
+        separator_layout.setContentsMargins(0, 8, 0, 10)
+        separator_layout.setSpacing(0)
+        self.results_section_divider = QFrame()
+        self.results_section_divider.setObjectName("ResultsDivider")
+        self.results_section_divider.setFixedHeight(2)
+        self.results_section_divider.setSizePolicy(
+            QSizePolicy.Policy.Expanding,
+            QSizePolicy.Policy.Fixed,
+        )
+        separator_layout.addWidget(self.results_section_divider)
+        self.results_separator.hide()
+
         center.addSpacing(0)
         center.addWidget(self.header_container, 0, Qt.AlignmentFlag.AlignCenter)
+        center.addWidget(self.results_separator, 0, Qt.AlignmentFlag.AlignCenter)
         center.addSpacing(16)
         center.addWidget(self.answer_card, 0, Qt.AlignmentFlag.AlignCenter)
 
@@ -1057,6 +1076,7 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(root)
         self.suggestion_dock.setParent(self.root)
         self.answer_card.hide()
+        self.results_separator.hide()
         self.suggestion_dock.hide()
         self._apply_responsive_sizes()
         self._position_suggestion_dock()
@@ -1223,7 +1243,7 @@ class MainWindow(QMainWindow):
     def _menu_stylesheet(self) -> str:
         return """
             QMenu {
-                background: #000543;
+                background: #00011B;
                 color: #ffffff;
                 border: 1px solid rgba(255, 255, 255, 0.16);
                 border-radius: 16px;
@@ -1355,6 +1375,8 @@ class MainWindow(QMainWindow):
         self.suggestion_dock.setMaximumWidth(home_width)
         self.suggestion_dock.setFixedWidth(home_width)
         self.answer_card.setFixedWidth(answer_width)
+        if hasattr(self, "results_separator"):
+            self.results_separator.setFixedWidth(answer_width)
 
         self.results_header_layout.setColumnMinimumWidth(0, left_width)
         self.results_header_layout.setColumnMinimumWidth(2, right_width)
@@ -1364,6 +1386,8 @@ class MainWindow(QMainWindow):
         self.header_container.updateGeometry()
         self.answer_card.updateGeometry()
         self.results_header.updateGeometry()
+        if hasattr(self, "results_separator"):
+            self.results_separator.updateGeometry()
         if self.suggestion_dock.isVisible():
             QTimer.singleShot(0, self._position_suggestion_dock)
 
@@ -1376,6 +1400,8 @@ class MainWindow(QMainWindow):
             self.title_label.hide()
             self.results_header.show()
             self.home_menu_slot.hide()
+            if hasattr(self, "results_separator"):
+                self.results_separator.show()
             if self.results_header_layout.indexOf(self.header_container) == -1:
                 self.results_header_layout.addWidget(
                     self.header_container,
@@ -1390,6 +1416,8 @@ class MainWindow(QMainWindow):
             self.results_header.hide()
             self.home_menu_slot.show()
             self.title_label.show()
+            if hasattr(self, "results_separator"):
+                self.results_separator.hide()
             self.results_header_layout.removeWidget(self.header_container)
             self.header_container.setMinimumHeight(0)
             self.header_container.setMaximumHeight(16777215)
@@ -1631,6 +1659,7 @@ class MainWindow(QMainWindow):
         self.search_input.setProperty("suggestionSelected", False)
         self._set_preview_state(False)
         self.answer_card.hide()
+        self.results_separator.hide()
         self._clear_evidence_cards()
         self.evidence_scroll.hide()
         self.answer_summary.clear()
@@ -1720,6 +1749,7 @@ class MainWindow(QMainWindow):
         self.details_button.setText(answer.details_label or "Show top matches")
         self.evidence_scroll.setVisible(False)
         self.answer_card.show()
+        self.results_separator.show()
         self._populate_evidence(answer)
         self.suggestion_dock.hide()
         self._set_search_attached(False)
@@ -1944,7 +1974,7 @@ class MainWindow(QMainWindow):
         dialog.setStyleSheet(
             """
             QMessageBox {
-                background: #000543;
+                background: #00011B;
                 color: #ffffff;
             }
             QMessageBox QLabel {
@@ -1953,16 +1983,16 @@ class MainWindow(QMainWindow):
                 min-width: 340px;
             }
             QMessageBox QPushButton {
-                background: rgba(121, 173, 255, 0.22);
+                background: rgba(40, 74, 128, 0.22);
                 color: #ffffff;
-                border: 1px solid rgba(121, 173, 255, 0.35);
+                border: 1px solid rgba(40, 74, 128, 0.35);
                 border-radius: 12px;
                 padding: 9px 16px;
                 min-width: 96px;
                 font-size: 14px;
             }
             QMessageBox QPushButton:hover {
-                background: rgba(121, 173, 255, 0.3);
+                background: rgba(40, 74, 128, 0.3);
             }
             """
         )
