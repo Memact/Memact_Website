@@ -1,16 +1,14 @@
-Memact
+**Memact**
 
-Version: v0.2
+**Version** `v0.2`
 
 Memact is a searchable memory of your activity.
-
 It quietly records what you do on your computer and lets you find it later.
-
 Instead of searching the internet again, you can search your own past actions.
 
 ---
 
-How to think about Memact
+**How To Think About It**
 
 You do not remember files or tabs.
 You remember moments.
@@ -25,7 +23,7 @@ Memact helps you find those moments again.
 
 ---
 
-What you can ask
+**What You Can Ask**
 
 Memact is built around one simple interaction:
 
@@ -41,7 +39,7 @@ You can ask things like:
 
 ---
 
-What Memact records
+**What Memact Records**
 
 Memact does not track everything.
 
@@ -57,9 +55,9 @@ It does not record keystrokes or anything invasive.
 
 ---
 
-How it works
+**How It Works**
 
-capture activity -> store it locally -> search it later
+`capture activity -> store it locally -> search it later`
 
 No folders.
 No tagging.
@@ -67,7 +65,7 @@ No manual organization.
 
 ---
 
-Principles
+**Principles**
 
 - everything stays on your device
 - no cloud services
@@ -78,7 +76,7 @@ Principles
 
 ---
 
-Interface
+**Interface**
 
 The app is minimal by design:
 
@@ -89,7 +87,7 @@ The app is minimal by design:
 
 ---
 
-Browser support
+**Browser Support**
 
 Memact includes a local extension for Chromium-based browsers.
 
@@ -101,19 +99,19 @@ It captures:
 
 All data stays on your device and is sent only to:
 
-http://127.0.0.1:38453
+[http://127.0.0.1:38453](http://127.0.0.1:38453)
 
 ---
 
-Storage
+**Storage**
 
 Data is stored locally at:
 
-%USERPROFILE%\AppData\Local\memact\memact.db
+`%USERPROFILE%\AppData\Local\memact\memact.db`
 
 ---
 
-Running Memact
+**Running Memact**
 
 Requirements:
 
@@ -121,19 +119,23 @@ Requirements:
 - PyQt6
 - pywinauto
 - sentence-transformers
-  - Note: `sentence-transformers` pulls in PyTorch (large download). If you want a lighter setup, you can remove it from `requirements.txt` and Memact will fall back to its local deterministic embedding path.
+`sentence-transformers` pulls in PyTorch (large download). If you want a lighter setup, remove it from `requirements.txt` and Memact will fall back to its local deterministic embedding path.
 
 Install:
 
+```powershell
 pip install -r requirements.txt
+```
 
 Run:
 
+```powershell
 python main.py
+```
 
 ---
 
-Notes
+**Notes**
 
 - Windows-first prototype
 - fully local system
@@ -143,7 +145,7 @@ Notes
 
 ---
 
-Go engine (optional)
+**Go Engine (Optional)**
 
 Requirements:
 
@@ -151,14 +153,18 @@ Requirements:
 
 Build:
 
+```powershell
 scripts\build_engine.ps1
+```
 
 Run:
 
+```powershell
 scripts\run_engine.ps1
+```
 
 ---
 
-License
+**License**
 
 Memact is proprietary and confidential. See LICENSE.
