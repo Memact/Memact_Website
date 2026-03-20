@@ -5,6 +5,7 @@ import logging
 import threading
 from pathlib import Path
 from urllib.parse import urlparse
+import os
 
 from PyQt6.QtCore import QObject, QPoint, QRectF, QEvent, Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import QAction, QColor, QCursor, QDesktopServices, QIcon, QPainter, QPainterPath, QRegion
@@ -107,6 +108,13 @@ def _link_label(url: str | None) -> str:
     if len(display) > 52:
         display = display[:49] + "…"
     return f"Open {display}"
+
+
+def _best_exe_for_span(span: ActivitySpan) -> str | None:
+    for event in span.events:
+        if event.exe_path:
+            return event.exe_path
+    return None
 
 
 def _duration_chip(seconds: int) -> str:
@@ -280,82 +288,51 @@ class EvidenceCard(QFrame):
             link_button.setObjectName("EvidenceLinkButton")
             link_button.setCursor(Qt.CursorShape.PointingHandCursor)
             link_button.clicked.connect(lambda _checked=False, value=best_url: QDesktopServices.openUrl(QUrl(value)))
+        elif _best_exe_for_span(span):
+            exe_path = _best_exe_for_span(span)
+            link_button = QPushButton(f"Open {app_label}")
+            link_button.setObjectName("EvidenceLinkButton")
+            link_button.setCursor(Qt.CursorShape.PointingHandCursor)
+            link_button.clicked.connect(lambda _checked=False, value=exe_path: os.startfile(value))
 
-        if span.attention_cue:
-            attention = QLabel(span.attention_cue)
-            attention.setObjectName("EvidenceAttention")
-            attention.setWordWrap(True)
-        else:
-            attention = None
+        attention = None
 
-        action_map = {
-            "app_switch": "app switch",
-            "tab_switch": "tab switch",
-            "navigate": "navigate",
-            "context_change": "context change",
-            "focus": "focus",
-            "typing": "typing",
-            "scrolling": "scrolling",
-        }
-        actions: list[str] = []
-        seen_actions: set[str] = set()
-        for event in span.events:
-            kind = (event.interaction_type or "").strip().lower()
-            if not kind or kind in {"heartbeat", "legacy_import", "legacy_focus", "legacy_heartbeat"}:
-                continue
-            label = action_map.get(kind, kind.replace("_", " "))
-            if label in seen_actions:
-                continue
-            seen_actions.add(label)
-            actions.append(label)
-            if len(actions) >= 5:
-                break
-        activity_line = None
-        if actions:
-            activity_line = QLabel("Actions: " + " | ".join(actions))
-            activity_line.setObjectName("EvidenceActivity")
-            activity_line.setWordWrap(True)
+        snippet_text = span.snippet.strip()
+        if snippet_text and len(snippet_text) > 180:
+            snippet_text = snippet_text[:177].rstrip() + "..."
+        snippet = None
+        if snippet_text and snippet_text.casefold() not in {span.session_title.casefold(), span.label.casefold()}:
+            snippet = QLabel(snippet_text)
+            snippet.setObjectName("EvidenceSnippet")
+            snippet.setWordWrap(True)
 
-        snippet = QLabel(span.snippet)
-        snippet.setObjectName("EvidenceSnippet")
-        snippet.setWordWrap(True)
-
-        reason = QLabel(span.match_reason)
-        reason.setObjectName("EvidenceReason")
-        reason.setWordWrap(True)
-
-        moment_text = span.session_flow if span.session_flow.casefold() != span.session_title.casefold() else span.moment_summary
-        moment = QLabel(moment_text)
-        moment.setObjectName("EvidenceMoment")
-        moment.setWordWrap(True)
+        context_line = None
+        if span.before_context or span.after_context:
+            parts = []
+            if span.before_context:
+                parts.append(span.before_context)
+            if span.after_context:
+                if parts:
+                    parts.append("then")
+                parts.append(span.after_context)
+            context_line = QLabel("Context: " + " ".join(parts))
+            context_line.setObjectName("EvidenceMoment")
+            context_line.setWordWrap(True)
+        elif span.moment_summary and span.moment_summary.casefold() != span.session_title.casefold():
+            context_line = QLabel(span.moment_summary)
+            context_line.setObjectName("EvidenceMoment")
+            context_line.setWordWrap(True)
 
         layout.addWidget(title)
         layout.addLayout(chip_row)
         layout.addWidget(meta)
         if link_button is not None:
             layout.addWidget(link_button, 0, Qt.AlignmentFlag.AlignLeft)
-        if attention is not None:
-            layout.addWidget(attention)
-        if activity_line is not None:
-            layout.addWidget(activity_line)
-        layout.addWidget(snippet)
-        layout.addWidget(moment)
-        if span.tab_preview:
-            tabs = QLabel("Nearby tabs: " + "  |  ".join(span.tab_preview))
-            tabs.setObjectName("EvidenceTabs")
-            tabs.setWordWrap(True)
-            layout.addWidget(tabs)
-        if span.before_context:
-            before = QLabel(f"Before: {span.before_context}")
-            before.setObjectName("EvidenceContext")
-            before.setWordWrap(True)
-            layout.addWidget(before)
-        if span.after_context:
-            after = QLabel(f"After: {span.after_context}")
-            after.setObjectName("EvidenceContext")
-            after.setWordWrap(True)
-            layout.addWidget(after)
-        layout.addWidget(reason)
+        if snippet is not None:
+            layout.addWidget(snippet)
+        if context_line is not None:
+            layout.addWidget(context_line)
+        # Drop match-reason line to reduce clutter; details are in the summary above.
 
 
 class GlassInfoDialog(QDialog):
@@ -1546,12 +1523,13 @@ class MainWindow(QMainWindow):
         right_width = self.results_right_controls.sizeHint().width()
         spacing = self.results_header_layout.horizontalSpacing()
         center_available = max(1, available - left_width - right_width - (spacing * 2))
+        center_safe = max(1, center_available - 12)
         min_width = min(self._min_content_width, center_available)
         if self._results_mode:
-            home_width = clamp(int(available * 0.82), min_width, center_available)
+            home_width = clamp(int(available * 0.82), min_width, center_safe)
         else:
             home_ratio = 0.68 if self.isMaximized() else 0.72
-            home_width = clamp(int(available * home_ratio), min_width, center_available)
+            home_width = clamp(int(available * home_ratio), min_width, center_safe)
 
         if self._results_mode:
             answer_max = available
@@ -1579,6 +1557,16 @@ class MainWindow(QMainWindow):
         self._position_loading_bar()
         if self.suggestion_dock.isVisible():
             QTimer.singleShot(0, self._position_suggestion_dock)
+
+    def _settle_layout(self) -> None:
+        self.root.layout().invalidate()
+        self.root.layout().activate()
+        if hasattr(self, "results_header_layout"):
+            self.results_header_layout.invalidate()
+            self.results_header_layout.activate()
+        self._apply_responsive_sizes()
+        self._position_results_shadow()
+        self._position_loading_bar()
 
     def _set_results_mode(self, active: bool) -> None:
         if self._results_mode == active:
@@ -1618,6 +1606,7 @@ class MainWindow(QMainWindow):
         self.root.layout().activate()
         self._apply_responsive_sizes()
         self._position_suggestion_dock()
+        QTimer.singleShot(0, self._settle_layout)
 
     def _set_preview_state(self, active: bool) -> None:
         self.search_input.setProperty("preview", active)
@@ -1952,6 +1941,7 @@ class MainWindow(QMainWindow):
         else:
             self.status_text.setText("Answer generated from local events on this device.")
         self._sync_back_button()
+        QTimer.singleShot(0, self._settle_layout)
 
     def _populate_evidence(self, answer: QueryAnswer) -> None:
         self._clear_evidence_cards()

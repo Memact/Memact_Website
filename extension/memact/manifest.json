@@ -3,6 +3,12 @@
   "name": "Memact",
   "version": "0.2.0",
   "description": "Capture browser tab context for Memact.",
+  "icons": {
+    "16": "icons/memact_16.png",
+    "32": "icons/memact_32.png",
+    "48": "icons/memact_48.png",
+    "128": "icons/memact_128.png"
+  },
   "permissions": ["tabs", "windows", "scripting"],
   "host_permissions": [
     "<all_urls>",
@@ -13,6 +19,12 @@
     "service_worker": "background.js"
   },
   "action": {
-    "default_title": "Memact"
+    "default_title": "Memact",
+    "default_icon": {
+      "16": "icons/memact_16.png",
+      "32": "icons/memact_32.png",
+      "48": "icons/memact_48.png",
+      "128": "icons/memact_128.png"
+    }
   }
 }
