@@ -100,8 +100,9 @@ The app is minimal by design:
 
 **Button & Color Principles**
 
-- Primary actions use the accent blue tint: background `rgba(40, 74, 128, 0.08)` with hover `rgba(40, 74, 128, 0.16)` and border `rgba(40, 74, 128, 0.16)`.
-- Secondary/supporting actions use the neutral white tint: background `rgba(255, 255, 255, 0.08)` with hover `rgba(255, 255, 255, 0.16)` and border `rgba(255, 255, 255, 0.16)`.
+- Button opacity communicates hierarchy: stronger buttons are primary, softer buttons are secondary, and faint buttons are disabled.
+- Primary actions use the accent blue tint: background `rgba(40, 74, 128, 0.14)` with hover `rgba(40, 74, 128, 0.20)` and border `rgba(88, 126, 188, 0.26)`.
+- Secondary/supporting actions use the neutral white tint: background `rgba(255, 255, 255, 0.05)` with hover `rgba(255, 255, 255, 0.10)` and border `rgba(255, 255, 255, 0.12)`.
 - Ghost/icon buttons are transparent at rest and pick up a subtle hover tint.
 - Destructive actions may use a red accent on hover to signal caution.
 

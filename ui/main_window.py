@@ -420,32 +420,23 @@ class GlassInfoDialog(QDialog):
                 font-size: 24px;
             }
             QLabel#DialogBody {
-                color: #ffffff;
-                font-size: 17px;
-            }
-            QFrame#InfoOrb {
-                background: rgba(255, 255, 255, 0.08);
-                border: 1px solid rgba(255, 255, 255, 0.16);
-                border-radius: 28px;
-            }
-            QLabel#InfoGlyph {
-                color: #ffffff;
-                font-size: 28px;
-                font-weight: 600;
+                color: rgba(255, 255, 255, 0.74);
+                font-size: 14px;
             }
             QPushButton {
                 background: rgba(40, 74, 128, 0.14);
                 color: #ffffff;
-                border: 1px solid rgba(88, 126, 188, 0.34);
-                border-radius: 14px;
-                padding: 10px 18px;
-                min-width: 110px;
-                font-size: 15px;
+                border: 1px solid rgba(88, 126, 188, 0.26);
+                border-radius: 12px;
+                padding: 0 18px;
+                min-width: 118px;
+                min-height: 38px;
+                font-size: 13px;
                 font-weight: 700;
             }
             QPushButton:hover {
-                background: rgba(40, 74, 128, 0.22);
-                border: 1px solid rgba(106, 150, 218, 0.4);
+                background: rgba(40, 74, 128, 0.20);
+                border: 1px solid rgba(106, 150, 218, 0.32);
             }
             """
         )
@@ -456,35 +447,16 @@ class GlassInfoDialog(QDialog):
         panel = QFrame()
         panel.setObjectName("DialogPanel")
         panel_layout = QVBoxLayout(panel)
-        panel_layout.setContentsMargins(22, 22, 22, 22)
-        panel_layout.setSpacing(18)
+        panel_layout.setContentsMargins(20, 20, 20, 20)
+        panel_layout.setSpacing(12)
 
-        top = QHBoxLayout()
-        top.setSpacing(16)
-
-        orb = QFrame()
-        orb.setObjectName("InfoOrb")
-        orb.setFixedSize(56, 56)
-        orb_layout = QVBoxLayout(orb)
-        orb_layout.setContentsMargins(0, 0, 0, 0)
-        glyph = QLabel("i")
-        glyph.setObjectName("InfoGlyph")
-        glyph.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        orb_layout.addWidget(glyph)
-
-        text_col = QVBoxLayout()
-        text_col.setSpacing(10)
         title_label = QLabel(title)
         title_label.setObjectName("DialogTitle")
         body_label = QLabel(text)
         body_label.setObjectName("DialogBody")
         body_label.setWordWrap(True)
-        text_col.addWidget(title_label)
-        text_col.addWidget(body_label)
-
-        top.addWidget(orb, 0, Qt.AlignmentFlag.AlignTop)
-        top.addLayout(text_col, 1)
-        panel_layout.addLayout(top)
+        panel_layout.addWidget(title_label)
+        panel_layout.addWidget(body_label)
 
         actions = QHBoxLayout()
         actions.addStretch(1)
@@ -531,7 +503,7 @@ class SearchHistoryDialog(QDialog):
             }
             QLabel#DialogBody {
                 color: rgba(255, 255, 255, 0.74);
-                font-size: 15px;
+                font-size: 14px;
             }
             QScrollArea#HistoryScroll {
                 background: transparent;
@@ -576,30 +548,34 @@ class SearchHistoryDialog(QDialog):
                 background: rgba(255, 255, 255, 0.16);
             }
             QPushButton#ClearButton {
-                background: rgba(255, 255, 255, 0.06);
-                color: rgba(255, 255, 255, 0.9);
-                border: 1px solid rgba(255, 255, 255, 0.14);
+                background: rgba(255, 255, 255, 0.05);
+                color: #ffffff;
+                border: 1px solid rgba(255, 255, 255, 0.12);
                 border-radius: 12px;
-                padding: 8px 14px;
-                font-family: "IBM Plex Sans";
+                padding: 0 18px;
+                min-width: 108px;
+                min-height: 38px;
+                font-size: 13px;
                 font-weight: 700;
             }
             QPushButton#ClearButton:hover {
-                background: rgba(255, 255, 255, 0.12);
+                background: rgba(255, 255, 255, 0.10);
                 border: 1px solid rgba(255, 255, 255, 0.16);
             }
             QPushButton#CloseButton {
                 background: rgba(40, 74, 128, 0.14);
                 color: #ffffff;
-                border: 1px solid rgba(88, 126, 188, 0.34);
+                border: 1px solid rgba(88, 126, 188, 0.26);
                 border-radius: 12px;
-                padding: 8px 14px;
-                font-family: "IBM Plex Sans";
+                padding: 0 18px;
+                min-width: 118px;
+                min-height: 38px;
+                font-size: 13px;
                 font-weight: 700;
             }
             QPushButton#CloseButton:hover {
-                background: rgba(40, 74, 128, 0.22);
-                border: 1px solid rgba(106, 150, 218, 0.4);
+                background: rgba(40, 74, 128, 0.20);
+                border: 1px solid rgba(106, 150, 218, 0.32);
             }
             """
         )
@@ -610,15 +586,13 @@ class SearchHistoryDialog(QDialog):
         panel = QFrame()
         panel.setObjectName("DialogPanel")
         panel_layout = QVBoxLayout(panel)
-        panel_layout.setContentsMargins(22, 22, 22, 22)
-        panel_layout.setSpacing(16)
+        panel_layout.setContentsMargins(20, 20, 20, 20)
+        panel_layout.setSpacing(12)
 
         title = QLabel("Search history")
         title.setObjectName("DialogTitle")
-        title.setFont(body_font(18))
         subtitle = QLabel("Your recent searches are stored locally on this device.")
         subtitle.setObjectName("DialogBody")
-        subtitle.setFont(body_font(12))
         subtitle.setWordWrap(True)
 
         panel_layout.addWidget(title)
@@ -643,12 +617,10 @@ class SearchHistoryDialog(QDialog):
         actions.addStretch(1)
         clear_button = QPushButton("Clear history")
         clear_button.setObjectName("ClearButton")
-        clear_button.setFont(body_font(12))
         clear_button.setCursor(Qt.CursorShape.PointingHandCursor)
         clear_button.clicked.connect(self._clear_history)
         close_button = QPushButton("Close")
         close_button.setObjectName("CloseButton")
-        close_button.setFont(body_font(12))
         close_button.setCursor(Qt.CursorShape.PointingHandCursor)
         close_button.clicked.connect(self.accept)
         actions.addWidget(clear_button)
@@ -811,6 +783,20 @@ class MainWindow(QMainWindow):
         self._show_loading_state()
         QTimer.singleShot(300, self._initialize_runtime_async)
 
+    def _create_results_divider(self) -> QWidget:
+        host = QWidget()
+        host.setFixedSize(20, 36)
+        layout = QHBoxLayout(host)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+        layout.addStretch(1)
+        line = QFrame()
+        line.setObjectName("ResultsDivider")
+        line.setFixedSize(1, 32)
+        layout.addWidget(line, 0, Qt.AlignmentFlag.AlignCenter)
+        layout.addStretch(1)
+        return host
+
     def _build_ui(self) -> None:
         self.setFont(body_font(12))
         self.setStyleSheet(
@@ -903,7 +889,7 @@ class MainWindow(QMainWindow):
                 border-radius: 12px;
             }
             QFrame#SuggestionDock {
-                background: rgba(0, 1, 27, 0.975);
+                background: rgba(8, 10, 34, 0.98);
                 border: 1px solid rgba(255, 255, 255, 0.16);
                 border-top: none;
                 border-top-left-radius: 0px;
@@ -951,27 +937,27 @@ class MainWindow(QMainWindow):
                 letter-spacing: 1px;
             }
             QPushButton#TimeFilterChip {
-                background: rgba(255, 255, 255, 0.08);
-                color: rgba(255, 255, 255, 0.78);
-                border: 1px solid rgba(255, 255, 255, 0.16);
+                background: rgba(255, 255, 255, 0.05);
+                color: #ffffff;
+                border: 1px solid rgba(255, 255, 255, 0.12);
                 border-radius: 16px;
                 padding: 5px 14px;
                 min-height: 28px;
                 font-size: 12px;
-                font-weight: 600;
+                font-weight: 700;
             }
             QPushButton#TimeFilterChip[active="true"] {
-                background: rgba(40, 74, 128, 0.08);
+                background: rgba(40, 74, 128, 0.14);
                 color: #ffffff;
-                border: 1px solid rgba(40, 74, 128, 0.16);
+                border: 1px solid rgba(88, 126, 188, 0.26);
             }
             QPushButton#TimeFilterChip:hover {
-                background: rgba(255, 255, 255, 0.16);
+                background: rgba(255, 255, 255, 0.10);
                 border: 1px solid rgba(255, 255, 255, 0.16);
             }
             QPushButton#TimeFilterChip[active="true"]:hover {
-                background: rgba(40, 74, 128, 0.16);
-                border: 1px solid rgba(40, 74, 128, 0.16);
+                background: rgba(40, 74, 128, 0.20);
+                border: 1px solid rgba(106, 150, 218, 0.32);
             }
             QFrame#SuggestionCard {
                 background: rgba(255, 255, 255, 0.08);
@@ -1004,7 +990,7 @@ class MainWindow(QMainWindow):
             }
             QFrame#SearchShell[active="true"] {
                 background: rgba(255, 255, 255, 0.08);
-                border: 1px solid rgba(40, 74, 128, 0.16);
+                border: 1px solid rgba(255, 255, 255, 0.16);
             }
             QFrame#SearchShell[attached="true"] {
                 border-bottom: none;
@@ -1083,15 +1069,15 @@ class MainWindow(QMainWindow):
             QPushButton#EvidenceLinkButton {
                 background: rgba(40, 74, 128, 0.14);
                 color: #ffffff;
-                border: 1px solid rgba(88, 126, 188, 0.34);
+                border: 1px solid rgba(88, 126, 188, 0.26);
                 border-radius: 12px;
                 padding: 6px 12px;
                 font-size: 12px;
                 font-weight: 700;
             }
             QPushButton#EvidenceLinkButton:hover {
-                background: rgba(40, 74, 128, 0.22);
-                border: 1px solid rgba(106, 150, 218, 0.4);
+                background: rgba(40, 74, 128, 0.20);
+                border: 1px solid rgba(106, 150, 218, 0.32);
             }
             QLabel#EvidenceAttention {
                 color: rgba(255, 255, 255, 0.76);
@@ -1133,17 +1119,17 @@ class MainWindow(QMainWindow):
                 letter-spacing: 1px;
             }
             QPushButton#RefineButton {
-                background: rgba(255, 255, 255, 0.06);
-                color: rgba(255, 255, 255, 0.9);
-                border: 1px solid rgba(255, 255, 255, 0.14);
+                background: rgba(255, 255, 255, 0.05);
+                color: #ffffff;
+                border: 1px solid rgba(255, 255, 255, 0.12);
                 border-radius: 14px;
                 padding: 10px 14px;
                 font-size: 13px;
                 text-align: left;
-                font-weight: 600;
+                font-weight: 700;
             }
             QPushButton#RefineButton:hover {
-                background: rgba(255, 255, 255, 0.12);
+                background: rgba(255, 255, 255, 0.10);
                 border: 1px solid rgba(255, 255, 255, 0.16);
             }
             QLabel#StatusText {
@@ -1216,9 +1202,7 @@ class MainWindow(QMainWindow):
         results_left_layout = QHBoxLayout(self.results_left_controls)
         results_left_layout.setContentsMargins(0, 0, 0, 0)
         results_left_layout.setSpacing(14)
-        self.results_divider = QFrame()
-        self.results_divider.setObjectName("ResultsDivider")
-        self.results_divider.setFixedSize(1, 36)
+        self.results_divider = self._create_results_divider()
         results_left_layout.addWidget(self.compact_brand_host, 0, Qt.AlignmentFlag.AlignVCenter)
         results_left_layout.addWidget(self.back_orb, 0, Qt.AlignmentFlag.AlignVCenter)
         results_left_layout.addWidget(self.reload_orb, 0, Qt.AlignmentFlag.AlignVCenter)
@@ -1237,9 +1221,7 @@ class MainWindow(QMainWindow):
         right_controls_layout = QHBoxLayout(self.results_right_controls)
         right_controls_layout.setContentsMargins(0, 0, 0, 0)
         right_controls_layout.setSpacing(14)
-        self.results_menu_divider = QFrame()
-        self.results_menu_divider.setObjectName("ResultsDivider")
-        self.results_menu_divider.setFixedSize(1, 36)
+        self.results_menu_divider = self._create_results_divider()
         right_controls_layout.addWidget(self.results_menu_orb, 0, Qt.AlignmentFlag.AlignVCenter)
 
         results_header_layout.addWidget(
@@ -1839,9 +1821,11 @@ class MainWindow(QMainWindow):
         show_heading = bool(heading) and bool(suggestions) and not chips_visible
         self.suggestion_heading.setText(heading)
         self.suggestion_heading.setVisible(show_heading)
+        typed_query_mode = bool(self.search_input.text().strip())
+        row_height = 92 if typed_query_mode else self._suggestion_row_height
         for suggestion in suggestions:
             card = SuggestionCard(suggestion)
-            card.setMinimumHeight(self._suggestion_row_height)
+            card.setMinimumHeight(row_height)
             card.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
             card.clicked.connect(self._apply_suggestion)
             card.hovered.connect(self._select_suggestion_by_completion)
@@ -1856,7 +1840,7 @@ class MainWindow(QMainWindow):
         desired_scroll_height = 0
         if visible_rows:
             desired_scroll_height = (
-                visible_rows * self._suggestion_row_height
+                visible_rows * row_height
                 + max(visible_rows - 1, 0) * self.suggestions_layout.spacing()
             )
         anchor_pos = self.search_shell.mapTo(self.root, QPoint(0, 0))
@@ -1888,6 +1872,7 @@ class MainWindow(QMainWindow):
         dock_visible = bool(suggestions) or chips_visible
         self._set_hero_shifted(dock_visible)
         self.suggestion_dock.setVisible(dock_visible)
+        self._sync_results_visibility_for_suggestions(dock_visible)
         self._set_search_attached(dock_visible)
         QTimer.singleShot(0, self._reveal_suggestion_dock)
         self._sync_back_button()
@@ -1901,6 +1886,14 @@ class MainWindow(QMainWindow):
         self.suggestion_dock.style().polish(self.suggestion_dock)
         self.search_shell.update()
         self.suggestion_dock.update()
+
+    def _sync_results_visibility_for_suggestions(self, suggestions_visible: bool) -> None:
+        if not self._results_mode:
+            return
+        show_results = (not suggestions_visible) and (self._last_answer is not None)
+        self.answer_card.setVisible(show_results)
+        if hasattr(self, "results_separator"):
+            self.results_separator.setVisible(show_results)
 
     def _update_search_button(self) -> None:
         has_text = bool(self.search_input.text())
@@ -1942,11 +1935,13 @@ class MainWindow(QMainWindow):
         )
         center_safe = max(1, center_available - 12)
         min_width = min(self._min_content_width, center_available)
-        if self._results_mode:
-            home_width = clamp(int(available * 0.82), min_width, center_safe)
-        else:
-            home_ratio = 0.68 if self.isMaximized() else 0.72
-            home_width = clamp(int(available * home_ratio), min_width, center_safe)
+        home_ratio = 0.68 if self.isMaximized() else 0.72
+        preferred_search_width = clamp(
+            int(available * home_ratio),
+            min_width,
+            min(self._max_results_search_width, center_safe),
+        )
+        home_width = preferred_search_width
 
         if self._results_mode:
             answer_max = available
@@ -2132,6 +2127,7 @@ class MainWindow(QMainWindow):
 
     def _dismiss_suggestions(self) -> None:
         self.suggestion_dock.hide()
+        self._sync_results_visibility_for_suggestions(False)
         self._update_time_chip_visibility()
         self._set_search_attached(False)
         self.search_input.setProperty("suggestionSelected", False)
@@ -2176,6 +2172,7 @@ class MainWindow(QMainWindow):
         if isinstance(focused, SuggestionCard):
             return
         self.suggestion_dock.hide()
+        self._sync_results_visibility_for_suggestions(False)
         self._update_time_chip_visibility()
         self._set_search_attached(False)
         self.search_input.setProperty("suggestionSelected", False)
@@ -2253,6 +2250,7 @@ class MainWindow(QMainWindow):
                 self._refresh_suggestions_immediately()
             else:
                 self.suggestion_dock.hide()
+                self._sync_results_visibility_for_suggestions(False)
                 self._set_search_attached(False)
                 self._set_search_active(False)
                 self._set_hero_shifted(False)
@@ -2319,6 +2317,7 @@ class MainWindow(QMainWindow):
         self.search_input.clearFocus()
         self._suggestion_timer.stop()
         self.suggestion_dock.hide()
+        self._sync_results_visibility_for_suggestions(False)
         self._update_time_chip_visibility()
         self._set_search_attached(False)
         threading.Thread(
@@ -2372,6 +2371,7 @@ class MainWindow(QMainWindow):
         self.results_separator.show()
         self._populate_evidence(answer)
         self.suggestion_dock.hide()
+        self._sync_results_visibility_for_suggestions(False)
         self._set_search_attached(False)
         self._set_hero_shifted(False)
         if answer.result_count:
