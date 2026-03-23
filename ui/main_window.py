@@ -8,7 +8,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 import os
 
-from PyQt6.QtCore import QObject, QPoint, QRectF, QEvent, Qt, QTimer, pyqtSignal
+from PyQt6.QtCore import QObject, QPoint, QRect, QRectF, QSize, QEvent, Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import QAction, QColor, QCursor, QDesktopServices, QIcon, QPainter, QPainterPath, QRegion
 from PyQt6.QtWidgets import (
     QApplication,
@@ -16,6 +16,8 @@ from PyQt6.QtWidgets import (
     QFrame,
     QGraphicsDropShadowEffect,
     QHBoxLayout,
+    QLayout,
+    QLayoutItem,
     QLabel,
     QLineEdit,
     QMainWindow,
@@ -128,6 +130,86 @@ def _duration_chip(seconds: int) -> str:
             return f"{hours}h {minutes}m"
         return f"{hours}h"
     return f"{minutes}m"
+
+
+class FlowLayout(QLayout):
+    def __init__(self, parent: QWidget | None = None, margin: int = 0, spacing: int = 8) -> None:
+        super().__init__(parent)
+        self._items: list[QLayoutItem] = []
+        self.setContentsMargins(margin, margin, margin, margin)
+        self.setSpacing(spacing)
+
+    def __del__(self) -> None:
+        while self.count():
+            self.takeAt(0)
+
+    def addItem(self, item: QLayoutItem) -> None:
+        self._items.append(item)
+
+    def count(self) -> int:
+        return len(self._items)
+
+    def itemAt(self, index: int) -> QLayoutItem | None:
+        if 0 <= index < len(self._items):
+            return self._items[index]
+        return None
+
+    def takeAt(self, index: int) -> QLayoutItem | None:
+        if 0 <= index < len(self._items):
+            return self._items.pop(index)
+        return None
+
+    def expandingDirections(self) -> Qt.Orientations:
+        return Qt.Orientation(0)
+
+    def hasHeightForWidth(self) -> bool:
+        return True
+
+    def heightForWidth(self, width: int) -> int:
+        return self._do_layout(QRect(0, 0, max(width, 0), 0), True)
+
+    def setGeometry(self, rect: QRect) -> None:
+        super().setGeometry(rect)
+        self._do_layout(rect, False)
+
+    def sizeHint(self) -> QSize:
+        return self.minimumSize()
+
+    def minimumSize(self) -> QSize:
+        margins = self.contentsMargins()
+        size = QSize()
+        for item in self._items:
+            size = size.expandedTo(item.minimumSize())
+        size += QSize(margins.left() + margins.right(), margins.top() + margins.bottom())
+        return size
+
+    def _do_layout(self, rect: QRect, test_only: bool) -> int:
+        margins = self.contentsMargins()
+        effective = rect.adjusted(margins.left(), margins.top(), -margins.right(), -margins.bottom())
+        if effective.width() <= 0:
+            return margins.top() + margins.bottom()
+
+        x = effective.x()
+        y = effective.y()
+        line_height = 0
+
+        for item in self._items:
+            hint = item.sizeHint()
+            next_x = x + hint.width()
+            if line_height > 0 and next_x > effective.right() + 1:
+                x = effective.x()
+                y += line_height + self.spacing()
+                next_x = x + hint.width()
+                line_height = 0
+
+            if not test_only:
+                item.setGeometry(QRect(QPoint(x, y), hint))
+
+            x = next_x + self.spacing()
+            line_height = max(line_height, hint.height())
+
+        used_height = (y - effective.y()) + line_height
+        return used_height + margins.top() + margins.bottom()
 
 
 class SignalBridge(QObject):
@@ -1436,7 +1518,7 @@ class MainWindow(QMainWindow):
         self.session_summary.setObjectName("SessionSummary")
         self.session_summary.setWordWrap(True)
         self.session_summary.setVisible(False)
-        self.session_action_row = QHBoxLayout()
+        self.session_action_row = FlowLayout(spacing=8)
         self.session_action_row.setSpacing(8)
         self.session_action_row.setContentsMargins(0, 0, 0, 0)
         self.session_action_host = QWidget()
@@ -1450,7 +1532,7 @@ class MainWindow(QMainWindow):
         self.refine_heading = QLabel("REFINE SEARCH")
         self.refine_heading.setObjectName("RefineHeading")
         self.refine_heading.setVisible(False)
-        self.refine_row = QHBoxLayout()
+        self.refine_row = FlowLayout(spacing=8)
         self.refine_row.setSpacing(8)
         self.refine_row.setContentsMargins(0, 0, 0, 0)
         self.refine_host = QWidget()
@@ -2465,9 +2547,10 @@ class MainWindow(QMainWindow):
             button = QPushButton(prompt)
             button.setObjectName("RefineButton")
             button.setCursor(Qt.CursorShape.PointingHandCursor)
+            button.setSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Fixed)
+            button.setToolTip(prompt)
             button.clicked.connect(lambda _checked=False, value=prompt: self._apply_suggestion(value))
             self.session_action_row.addWidget(button)
-        self.session_action_row.addStretch(1)
         self.session_heading.hide()
         self.session_summary.show()
         self.session_action_host.setVisible(bool(prompts))
@@ -2505,9 +2588,10 @@ class MainWindow(QMainWindow):
             button = QPushButton(query)
             button.setObjectName("RefineButton")
             button.setCursor(Qt.CursorShape.PointingHandCursor)
+            button.setSizePolicy(QSizePolicy.Policy.Maximum, QSizePolicy.Policy.Fixed)
+            button.setToolTip(query)
             button.clicked.connect(lambda _checked=False, value=query: self._apply_suggestion(value))
             self.refine_row.addWidget(button)
-        self.refine_row.addStretch(1)
         self.refine_heading.show()
         self.refine_host.show()
 
