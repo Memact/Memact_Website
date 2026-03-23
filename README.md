@@ -195,27 +195,6 @@ python main.py
 
 ---
 
-**Local AI (Required)**
-
-Memact uses a small local AI model to synthesise
-richer answers from your activity data.
-
-Requirements:
-
-- Install Ollama: [https://ollama.com](https://ollama.com)
-- Pull the model: `ollama pull hf.co/lmstudio-community/Qwen3.5-0.8B-GGUF:Q8_0`
-
-Once running, Memact automatically detects Ollama and
-uses it to generate natural language answers instead of
-templates. On first launch, Memact will start Ollama if it
-can and pull the model in the background if it is missing.
-Once the model is downloaded, it stays on your device until
-you remove it from Ollama yourself.
-
-No data leaves your device. The model runs entirely locally.
-
----
-
 **Notes**
 
 - Windows-first prototype

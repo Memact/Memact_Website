@@ -23,12 +23,6 @@ from core.engine_client import engine_candidates, first_available
 from core.keywords import extract_keyphrases
 from core.meaning_extractor import QueryMeaning, extract_query_meaning, warmup_spacy
 from core.episodic_graph import find_related_sessions, get_session_chain
-from core.ollama_client import (
-    is_ollama_available,
-    synthesise_answer,
-    synthesise_comparison,
-    synthesise_progression,
-)
 from core.semantic import cosine_similarity, embed_text, rerank_query_text_pairs, tokenize
 from core.skill_loader import Skill, get_skills
 from core.skill_router import route_skill
@@ -1362,14 +1356,7 @@ def _synthesise_existing_answer(
     *,
     session_context: dict | None = None,
 ) -> str:
-    if not spans or not is_ollama_available():
-        return fallback_answer
-    synthesis = synthesise_answer(
-        query,
-        _spans_to_event_dicts(spans, limit=5),
-        session_context=session_context,
-    )
-    return synthesis or fallback_answer
+    return fallback_answer
 
 
 def _handle_learning_query(
@@ -1389,7 +1376,6 @@ def _handle_learning_query(
             related_queries=[],
         )
     spans = sorted(spans, key=lambda span: (span.start_at, span.label))
-    event_dicts = _spans_to_event_dicts(spans, limit=6)
     first_seen = spans[0].start_at.strftime("%b %d")
     last_seen = spans[-1].start_at.strftime("%b %d")
     top_topics = _top_content_topics(spans, limit=3)
@@ -1398,7 +1384,7 @@ def _handle_learning_query(
     )
     if top_topics:
         fallback_answer += f" The main ideas that kept showing up were {_join_labels(top_topics)}."
-    answer_text = synthesise_progression(query, event_dicts) or fallback_answer
+    answer_text = fallback_answer
     summary = (
         f"I found {len(ranked)} related events across {len(spans)} moments."
         f" Earliest match: {first_seen}. Latest match: {last_seen}."
@@ -1451,11 +1437,7 @@ def _handle_comparison_query(
         f"Your {topic_a} activity leaned toward {_join_labels(topics_a[:2])}, "
         f"while {topic_b} leaned toward {_join_labels(topics_b[:2])}."
     )
-    answer_text = synthesise_comparison(
-        query,
-        _spans_to_event_dicts(spans_a, limit=4),
-        _spans_to_event_dicts(spans_b, limit=4),
-    ) or fallback_answer
+    answer_text = fallback_answer
     summary = (
         f"I found {len(ranked_a)} matches for {topic_a} and {len(ranked_b)} for {topic_b}."
     )
@@ -1542,10 +1524,7 @@ def _handle_connection_query(
         if centroid_similarity >= 0.45
         else " Their local activity overlap looks moderate."
     )
-    answer_text = synthesise_answer(
-        query,
-        _spans_to_event_dicts(bridge_spans or (spans_a[:2] + spans_b[:2]), limit=5),
-    ) or fallback_answer
+    answer_text = fallback_answer
     summary = (
         f"I found {len(bridge_scored)} bridging events between {topic_a} and {topic_b}."
     )
@@ -1643,7 +1622,7 @@ def _handle_progression_query(
         f"It looks like {topic} grew out of {_join_labels(labels[:2])}"
         f"{', and then ' + labels[2] if len(labels) > 2 else ''}."
     )
-    answer_text = synthesise_progression(query, _spans_to_event_dicts(chain_spans, limit=6)) or fallback_answer
+    answer_text = fallback_answer
     summary = f"I traced back through {len(chain_session_ids)} linked sessions."
     return QueryAnswer(
         answer=answer_text,

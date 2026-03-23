@@ -38,7 +38,6 @@ from core.browser_bridge import BrowserBridgeServer, BrowserStateStore
 from core.browser_setup import detect_browsers, extension_manual_url, launch_extension_setup
 from core.database import init_db
 from core.monitor import WindowMonitor
-from core.ollama_client import ensure_model_pulled, get_ollama_setup_state
 from core.query_engine import (
     ActivitySpan,
     QueryAnswer,
@@ -46,7 +45,6 @@ from core.query_engine import (
     answer_query,
     autocomplete_suggestions,
     dynamic_suggestions,
-    get_query_engine_warmup_state,
     warmup_query_engine,
 )
 from core.search_history import add_history, clear_history, load_history, remove_history
@@ -758,9 +756,6 @@ class MainWindow(QMainWindow):
         self._cached_empty_suggestions: list[SearchSuggestion] | None = None
         self._active_time_filter: str | None = None
         self._results_mode = False
-        self._local_ai_ready = False
-        self._query_engine_ready = False
-        self._ollama_notice_shown = False
 
         self._suggestion_timer = QTimer(self)
         self._suggestion_timer.setSingleShot(True)
@@ -781,10 +776,6 @@ class MainWindow(QMainWindow):
         self._tray_hide_timer.setSingleShot(True)
         self._tray_hide_timer.setInterval(250)
         self._tray_hide_timer.timeout.connect(self._hide_tray_menu_if_idle)
-
-        self._ollama_timer = QTimer(self)
-        self._ollama_timer.setInterval(1500)
-        self._ollama_timer.timeout.connect(self._poll_local_ai_status)
 
         self._build_ui()
         self._build_tray()
@@ -1597,13 +1588,10 @@ class MainWindow(QMainWindow):
         if self._db_ready:
             return
         self._db_ready = True
+        self.status_text.setText("Ready. Query the Past.")
         QTimer.singleShot(150, self._start_background_services)
         QTimer.singleShot(900, self._maybe_show_browser_setup)
-        ensure_model_pulled()
         warmup_query_engine()
-        self._poll_local_ai_status()
-        if not self._ollama_timer.isActive():
-            self._ollama_timer.start()
 
     def _handle_runtime_failed(self, message: str) -> None:
         self.status_text.setText("Memact could not start the local database.")
@@ -1625,40 +1613,6 @@ class MainWindow(QMainWindow):
         if self.browser_bridge.error:
             self.status_text.setText(
                 "Browser bridge could not start. The extension may not connect."
-            )
-
-    def _poll_local_ai_status(self) -> None:
-        state = get_ollama_setup_state()
-        self._local_ai_ready = bool(state.get("installed")) and bool(state.get("running")) and bool(state.get("model_ready"))
-        self._query_engine_ready = bool(get_query_engine_warmup_state().get("ready"))
-        all_ready = self._local_ai_ready and self._query_engine_ready
-        self.search_button.setEnabled(self._db_ready and all_ready)
-        if all_ready:
-            if self._ollama_timer.isActive():
-                self._ollama_timer.stop()
-            if self._db_ready and not self.answer_card.isVisible():
-                self.status_text.setText("Ready. Query the Past.")
-            return
-
-        ensure_model_pulled()
-        warmup_query_engine()
-        if self._db_ready and not self.answer_card.isVisible():
-            if not self._local_ai_ready:
-                self.status_text.setText(str(state.get("message") or "Preparing local reasoning engine..."))
-            else:
-                self.status_text.setText("Warming up local search engine...")
-        if (
-            self._db_ready
-            and not bool(state.get("installed"))
-            and not self._ollama_notice_shown
-        ):
-            self._ollama_notice_shown = True
-            QTimer.singleShot(
-                0,
-                lambda: self._show_info_dialog(
-                    "Local AI Required",
-                    "Memact now requires Ollama and its local Qwen model before search is available. Install Ollama, keep it running, and Memact will download the model once on this device.",
-                ),
             )
 
     def _refresh_suggestions(self) -> None:
@@ -2367,13 +2321,7 @@ class MainWindow(QMainWindow):
         self._set_search_active(False)
         self._set_hero_shifted(False)
         if self._db_ready:
-            if self._local_ai_ready and self._query_engine_ready:
-                self.status_text.setText("Ready. Query the Past.")
-            else:
-                if not self._local_ai_ready:
-                    self.status_text.setText(str(get_ollama_setup_state().get("message") or "Preparing local reasoning engine..."))
-                else:
-                    self.status_text.setText("Warming up local search engine...")
+            self.status_text.setText("Ready. Query the Past.")
         else:
             self.status_text.setText("Starting your local memory engine...")
         self._sync_back_button()
@@ -2386,14 +2334,6 @@ class MainWindow(QMainWindow):
         self.search_input.clearFocus()
         if not self._db_ready:
             self.status_text.setText("Still starting up. Your local memory engine is not ready yet.")
-            return
-        if not self._local_ai_ready or not self._query_engine_ready:
-            ensure_model_pulled()
-            warmup_query_engine()
-            if not self._local_ai_ready:
-                self.status_text.setText(str(get_ollama_setup_state().get("message") or "Preparing local reasoning engine..."))
-            else:
-                self.status_text.setText("Warming up local search engine...")
             return
         self._query_request_id += 1
         request_id = self._query_request_id

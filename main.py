@@ -17,7 +17,6 @@ from PyQt6.QtWidgets import QApplication
 sys.coinit_flags = 2
 
 from core.logging_utils import configure_logging
-from core.ollama_client import ensure_model_pulled
 from core.query_engine import warmup_query_engine
 from ui.fonts import body_font
 from ui.branding import app_icon
@@ -26,7 +25,6 @@ from ui.main_window import MainWindow
 
 def main() -> int:
     configure_logging()
-    ensure_model_pulled()
     warmup_query_engine()
     app = QApplication(sys.argv)
     app.setApplicationName("Memact")
