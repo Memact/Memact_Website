@@ -2536,13 +2536,14 @@ class MainWindow(QMainWindow):
         if foundational_count:
             parts.append(f"{foundational_count} foundational")
         self.session_summary.setText("  ·  ".join(parts))
+        anchor_label = label if len(label) <= 48 else f"{label[:47].rstrip(' -,:;')}…"
         prompts: list[str] = []
         if upstream_count:
-            prompts.append("What led me here?")
+            prompts.append(f"What led to {anchor_label}?")
         if downstream_count:
-            prompts.append("What happened after?")
+            prompts.append(f"What happened after {anchor_label}?")
         if not prompts:
-            prompts.append("Show session chain")
+            prompts.append(f"Show everything connected to {anchor_label}")
         for prompt in prompts[:2]:
             button = QPushButton(prompt)
             button.setObjectName("RefineButton")

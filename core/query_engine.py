@@ -75,6 +75,46 @@ _STOP_WORDS = {
     "app",
 }
 
+_GENERIC_TOPIC_TOKENS = {
+    "app",
+    "article",
+    "browser",
+    "chat",
+    "content",
+    "conversation",
+    "discord",
+    "doc",
+    "docs",
+    "document",
+    "file",
+    "github",
+    "google",
+    "huggingface",
+    "link",
+    "memact",
+    "message",
+    "note",
+    "notebooklm",
+    "overview",
+    "page",
+    "paper",
+    "pdf",
+    "post",
+    "presentation",
+    "read",
+    "reading",
+    "search",
+    "session",
+    "site",
+    "slide",
+    "slides",
+    "tab",
+    "thread",
+    "video",
+    "website",
+    "youtube",
+}
+
 _UI_ACTION_STARTERS = (
     "create ",
     "open ",
@@ -271,16 +311,24 @@ def _episodic_graph_session_context(query_embedding: list[float]) -> dict | None
     if not related:
         return None
     strongest = related[0]
-    if float(strongest.get("similarity") or 0.0) <= 0.0:
+    similarity = float(strongest.get("similarity") or 0.0)
+    if similarity <= 0.0:
         return None
     try:
-        return get_session_chain(int(strongest["session_id"]))
+        chain = get_session_chain(int(strongest["session_id"]))
     except Exception:
         return None
+    if isinstance(chain, dict):
+        chain["_similarity"] = similarity
+    return chain
 
 
 def _attach_session_context(answer: QueryAnswer, session_context: dict | None) -> QueryAnswer:
     if not session_context:
+        return answer
+    if not answer.evidence or _low_confidence(answer.evidence):
+        return answer
+    if float(session_context.get("_similarity") or 0.0) < 0.34:
         return answer
     session = session_context.get("session")
     if not isinstance(session, dict):
@@ -727,6 +775,101 @@ def _normalize_suggestion_topic(value: str | None, *, max_len: int = 56) -> str 
     return text[:max_len].strip()
 
 
+def _prompt_anchor_text(value: str | None, *, max_len: int = 48) -> str | None:
+    text = _clean_topic_value(_normalize_label(str(value or "")))
+    if not text:
+        return None
+    if len(text) <= max_len:
+        return text
+    shortened = text[: max_len - 1].rstrip(" -,:;")
+    return f"{shortened}…"
+
+
+def _topic_is_specific(topic: str | None, event: Event | None = None) -> bool:
+    normalized = _normalize_suggestion_topic(topic)
+    if not normalized:
+        return False
+    tokens = [token for token in _meaningful_tokens(normalized) if len(token) >= 3]
+    if not tokens:
+        return False
+    if len(tokens) == 1 and tokens[0] in _GENERIC_TOPIC_TOKENS:
+        return False
+    if all(token in _GENERIC_TOPIC_TOKENS for token in tokens):
+        return False
+    if event is not None and _topic_matches_context(normalized, event):
+        return False
+    return True
+
+
+def _safe_generated_prompt(prompt: str | None, *, original_query: str | None = None) -> str | None:
+    text = re.sub(r"\s+", " ", str(prompt or "")).strip()
+    if not text:
+        return None
+    if len(text) > 88:
+        return None
+    lowered = text.casefold().rstrip("?")
+    if original_query and lowered == original_query.casefold().strip().rstrip("?"):
+        return None
+    ambiguous_patterns = (
+        r"^what led me to (?:this|that|here)$",
+        r"^what led me here$",
+        r"^what happened after(?: this| that)?$",
+        r"^show (?:everything )?connected to (?:this|that)(?: session| moment)?$",
+        r"^show session chain$",
+    )
+    if any(re.match(pattern, lowered, re.IGNORECASE) for pattern in ambiguous_patterns):
+        return None
+
+    single_topic_patterns = (
+        r"^what else did i read about (.+)\?$",
+        r"^what led me to start working on (.+)\?$",
+        r"^where else did i see (.+)\?$",
+    )
+    dual_topic_patterns = (
+        r"^what's the difference between (.+) and (.+)\?$",
+        r"^is there a connection between (.+) and something else i studied\?$",
+    )
+    for pattern in single_topic_patterns:
+        match = re.match(pattern, text, re.IGNORECASE)
+        if match:
+            topic = match.group(1).strip()
+            return text if _topic_is_specific(topic) else None
+    for pattern in dual_topic_patterns:
+        match = re.match(pattern, text, re.IGNORECASE)
+        if match:
+            left = match.group(1).strip()
+            right = match.group(2).strip() if match.lastindex and match.lastindex >= 2 else ""
+            if _topic_is_specific(left) and _topic_is_specific(right):
+                return text
+            return None
+
+    if text.endswith("?"):
+        return text
+    return None
+
+
+def _finalize_related_queries(
+    prompts: list[str],
+    *,
+    original_query: str | None = None,
+    limit: int = 3,
+) -> list[str]:
+    deduped: list[str] = []
+    seen: set[str] = set()
+    for prompt in prompts:
+        safe = _safe_generated_prompt(prompt, original_query=original_query)
+        if not safe:
+            continue
+        key = safe.casefold()
+        if key in seen:
+            continue
+        deduped.append(safe)
+        seen.add(key)
+        if len(deduped) >= limit:
+            break
+    return deduped
+
+
 def _looks_like_ui_feature_text(value: str | None) -> bool:
     text = _normalize_label(str(value or ""))
     if not text:
@@ -916,7 +1059,7 @@ def _event_suggestion_topics(event: Event) -> list[str]:
             continue
         if _looks_like_ui_feature_text(normalized):
             continue
-        if _topic_matches_context(normalized, event):
+        if not _topic_is_specific(normalized, event):
             continue
         key = normalized.casefold()
         if key in seen:
@@ -931,7 +1074,7 @@ def _event_suggestion_topics(event: Event) -> list[str]:
             continue
         if _looks_like_ui_feature_text(normalized):
             continue
-        if _topic_matches_context(normalized, event):
+        if not _topic_is_specific(normalized, event):
             continue
         key = normalized.casefold()
         if key in seen:
@@ -953,7 +1096,7 @@ def _event_suggestion_topics(event: Event) -> list[str]:
                 continue
             if _looks_like_ui_feature_text(normalized):
                 continue
-            if _topic_matches_context(normalized, event):
+            if not _topic_is_specific(normalized, event):
                 continue
             key = normalized.casefold()
             if key in seen:
@@ -1029,15 +1172,30 @@ def _query_topic_hint(query: str, *, max_terms: int = 4) -> str | None:
         "information",
         "encountered",
         "encounter",
+        "that",
+        "this",
+        "those",
+        "these",
+        "something",
+        "someone",
+        "somewhere",
+        "here",
+        "there",
+    }
+    domain_tokens = {
+        token
+        for domain in _extract_domains(query)
+        for token in tokenize(domain.replace(".", " "))
+        if len(token) >= 3
     }
     tokens = [
         token
         for token in _meaningful_tokens(query)
-        if len(token) >= 4 and token not in generic
+        if len(token) >= 4 and token not in generic and token not in domain_tokens and token not in _GENERIC_TOPIC_TOKENS
     ]
     if not tokens:
         return None
-    return " ".join(tokens[:max_terms])
+    return _clean_topic_value(" ".join(tokens[:max_terms]))
 
 
 def _content_event_signal_strength(event: Event) -> float:
@@ -1189,8 +1347,8 @@ def _content_query_answer(
     ui_feature_match = _looks_like_ui_feature_text(best_passage)
     domain = _domain(best_event.url or top_span.url)
     app_name = _friendly_app_name(best_event.application or top_span.application)
-    top_topic = _content_topic_for_span(top_span)
-    query_topic = _query_topic_hint(query)
+    top_topic = _clean_topic_value(_content_topic_for_span(top_span))
+    query_topic = _clean_topic_value(_query_topic_hint(query))
     if top_topic and query_topic:
         query_tokens = set(_meaningful_tokens(query_topic))
         topic_tokens = set(_meaningful_tokens(top_topic))
@@ -1202,15 +1360,17 @@ def _content_query_answer(
     related_topics = [
         topic
         for topic in _top_content_topics(spans, limit=4)
-        if topic.casefold() != (top_topic or "").casefold()
+        if topic.casefold() != (top_topic or "").casefold() and _topic_is_specific(topic)
     ]
     generic_topic_labels = {
         (domain or "").casefold(),
         app_name.casefold(),
         _friendly_app_name(best_event.application).casefold(),
     }
-    if top_topic and top_topic.casefold() in generic_topic_labels:
+    if top_topic and (top_topic.casefold() in generic_topic_labels or not _topic_is_specific(top_topic)):
         top_topic = related_topics[0] if related_topics else None
+    if not top_topic and query_topic and _topic_is_specific(query_topic):
+        top_topic = query_topic
     passage_hint = _condense_source_label(best_passage, max_len=88)
     if passage_hint and _looks_like_ui_feature_text(passage_hint) and source_label:
         passage_hint = None
@@ -1264,17 +1424,7 @@ def _content_query_answer(
         prompts.append(f"What else did I read on {domain}?")
     else:
         prompts.append(f"When did I last use {app_name}?")
-    deduped: list[str] = []
-    seen: set[str] = set()
-    for prompt in prompts:
-        key = prompt.casefold()
-        if key in seen:
-            continue
-        deduped.append(prompt)
-        seen.add(key)
-        if len(deduped) >= 3:
-            break
-    return answer, " ".join(summary_parts), deduped
+    return answer, " ".join(summary_parts), _finalize_related_queries(prompts, original_query=query, limit=3)
 
 
 def _event_embedding_vector(event: Event) -> list[float]:
@@ -1342,6 +1492,51 @@ def _primary_event_for_span(span: ActivitySpan) -> Event | None:
     )
 
 
+def _span_match_fraction(
+    span: ActivitySpan,
+    *,
+    target_domains: set[str] | None = None,
+    app_hint: str | None = None,
+) -> float:
+    if not span.events:
+        return 0.0
+    matched = 0
+    for event in span.events:
+        if target_domains and any(_event_matches_domain(event, domain) for domain in target_domains):
+            matched += 1
+            continue
+        if app_hint and _event_matches_app(event, app_hint):
+            matched += 1
+    return matched / max(len(span.events), 1)
+
+
+def _matching_event_label(
+    span: ActivitySpan,
+    *,
+    target_domains: set[str] | None = None,
+    app_hint: str | None = None,
+) -> str | None:
+    matching_events: list[Event] = []
+    for event in span.events:
+        if target_domains and any(_event_matches_domain(event, domain) for domain in target_domains):
+            matching_events.append(event)
+            continue
+        if app_hint and _event_matches_app(event, app_hint):
+            matching_events.append(event)
+    if not matching_events:
+        return None
+    best = max(
+        matching_events,
+        key=lambda event: (
+            len((event.full_text or "").strip()),
+            len((event.content_text or "").strip()),
+            len((event.window_title or "").strip()),
+            event.id,
+        ),
+    )
+    return _event_label(best)
+
+
 def _spans_to_event_dicts(spans: list[ActivitySpan], *, limit: int = 5) -> list[dict]:
     items: list[dict] = []
     seen: set[int] = set()
@@ -1381,16 +1576,36 @@ def _topic_from_query(query: str, meaning: QueryMeaning) -> str:
     ):
         if lowered.startswith(prefix):
             original = query.strip().rstrip("?")
-            return original[len(prefix) :].strip() or original
-    return _query_topic_hint(query) or query.strip().rstrip("?")
+            topic = _clean_topic_value(original[len(prefix) :].strip())
+            return topic or original
+    return _clean_topic_value(_query_topic_hint(query) or query.strip().rstrip("?")) or query.strip().rstrip("?")
 
 
 def _clean_topic_value(value: str | None) -> str | None:
     text = re.sub(r"\s+", " ", str(value or "").strip(" .,:;!?\"'()[]{}"))
     if not text:
         return None
-    text = re.sub(r"^(?:that|the|a|an)\s+", "", text, flags=re.IGNORECASE)
+    text = re.sub(r"^(?:that|this|these|those|the|a|an)\s+", "", text, flags=re.IGNORECASE)
     return text.strip() or None
+
+
+def _needs_explicit_anchor(query: str, meaning: QueryMeaning, skill: Skill | None) -> bool:
+    if meaning.domain or meaning.app:
+        return False
+    text = query.casefold().strip().rstrip("?")
+    if not text:
+        return False
+    if skill is not None and skill.name in {"connection_query", "comparison_query"}:
+        return False
+    anchored_patterns = (
+        r"^what led me to (?:this|that|here)$",
+        r"^what happened after(?: this| that)?$",
+        r"^show (?:everything )?connected to (?:this|that)(?: session| moment)?$",
+        r"^show session chain$",
+        r"^what was i doing before (?:this|that)$",
+        r"^what else was open around (?:this|that)$",
+    )
+    return any(re.match(pattern, text, re.IGNORECASE) for pattern in anchored_patterns)
 
 
 def _extract_dual_topics(query: str) -> tuple[str | None, str | None]:
@@ -1524,11 +1739,11 @@ def _handle_learning_query(
         evidence=spans[:6],
         time_scope_label=None,
         result_count=len(ranked),
-        related_queries=[
+        related_queries=_finalize_related_queries([
             f"What led me to start working on {topic}?",
             f"What else did I read about {topic}?",
             f"Is there a connection between {topic} and something else I studied?",
-        ],
+        ], original_query=query, limit=3),
     )
 
 
@@ -1577,11 +1792,11 @@ def _handle_comparison_query(
         evidence=combined_evidence,
         time_scope_label=None,
         result_count=len(ranked_a) + len(ranked_b),
-        related_queries=[
+        related_queries=_finalize_related_queries([
             f"What do {topic_a} and {topic_b} have in common?",
             f"What else did I read about {topic_a}?",
             f"What else did I read about {topic_b}?",
-        ],
+        ], original_query=query, limit=3),
     )
 
 
@@ -1664,11 +1879,11 @@ def _handle_connection_query(
         evidence=evidence,
         time_scope_label=None,
         result_count=len(bridge_scored),
-        related_queries=[
+        related_queries=_finalize_related_queries([
             f"What led me to start working on {topic_a}?",
             f"What led me to start working on {topic_b}?",
             f"What's the difference between {topic_a} and {topic_b}?",
-        ],
+        ], original_query=query, limit=3),
     )
 
 
@@ -1698,7 +1913,7 @@ def _handle_progression_query(
             evidence=spans[:4],
             time_scope_label=None,
             result_count=len(ranked),
-            related_queries=[f"What else did I read about {topic}?"],
+            related_queries=_finalize_related_queries([f"What else did I read about {topic}?"], original_query=query, limit=3),
         )
 
     chain_session_ids: list[int] = []
@@ -1759,11 +1974,11 @@ def _handle_progression_query(
         evidence=chain_spans[:6],
         time_scope_label=None,
         result_count=len(chain_events) or len(ranked),
-        related_queries=[
+        related_queries=_finalize_related_queries([
             f"What else was connected to {topic}?",
             f"What did I do before {topic}?",
             f"Show me my learning journey on {topic}",
-        ],
+        ], original_query=query, limit=3),
     )
 
 
@@ -2963,11 +3178,60 @@ def _low_confidence(spans: list[ActivitySpan]) -> bool:
     if not spans:
         return True
     top = spans[0].relevance
-    if top < 0.2:
+    if top < 0.26:
         return True
-    if len(spans) > 1 and top < 0.3 and (top - spans[1].relevance) < 0.05:
+    if len(spans) > 1 and top < 0.34 and (top - spans[1].relevance) < 0.08:
         return True
     return False
+
+
+def _content_query_is_trustworthy(spans: list[ActivitySpan], query: str) -> bool:
+    if not spans:
+        return False
+    top = spans[0]
+    if not _span_has_precise_capture(top):
+        return False
+    top_score = _content_query_overlap_score(top, query)
+    if top_score < 0.78:
+        return False
+    if len(spans) > 1:
+        second_score = _content_query_overlap_score(spans[1], query)
+        if (top_score - second_score) < 0.08 and top_score < 1.05:
+            return False
+    return True
+
+
+def _launch_safe_evidence(spans: list[ActivitySpan]) -> list[ActivitySpan]:
+    if not spans:
+        return []
+    if _low_confidence(spans):
+        return spans[:1]
+    trimmed = [span for span in spans if not _is_generic_noise_span(span)]
+    if not trimmed:
+        trimmed = spans
+    return trimmed[:3]
+
+
+def _launch_safe_finalize(answer: QueryAnswer, *, original_query: str | None = None) -> QueryAnswer:
+    if not answer.evidence:
+        answer.related_queries = []
+        answer.details_label = ""
+        answer.session_context = None
+        return answer
+    low_conf = _low_confidence(answer.evidence)
+    answer.evidence = _launch_safe_evidence(answer.evidence)
+    if low_conf:
+        answer.related_queries = []
+        answer.session_context = None
+        if answer.details_label:
+            answer.details_label = "Show closest match"
+    else:
+        answer.related_queries = _finalize_related_queries(
+            answer.related_queries,
+            original_query=original_query,
+            limit=2,
+        )
+    return answer
 
 
 def _contextual_recall_query(query: str) -> tuple[str | None, str | None]:
@@ -3342,7 +3606,7 @@ def _duration_summary(
     label: str | None,
     query_category: str | None,
     top_topics: list[str] | None,
-    best_span: ActivitySpan | None,
+    best_moment_label: str | None,
 ) -> str:
     scope = _time_scope_suffix(time_scope)
     if query_category:
@@ -3354,8 +3618,8 @@ def _duration_summary(
         base = f"Based on local activity{scope}."
     if top_topics:
         base = f"{base} Topics nearby: {_join_labels(top_topics[:2])}."
-    if best_span:
-        return f"{base} Best matching moment: {best_span.session_title}."
+    if best_moment_label:
+        return f"{base} Closest captured moment: {best_moment_label}."
     return base
 
 
@@ -3385,9 +3649,14 @@ def _duration_related_queries(
     prompts: list[str] = []
     scope = time_scope or "today"
     if label:
-        prompts.append(f"When did I last use {label}?")
-        prompts.append(f"Did I use {label} {scope}?")
-        prompts.append(f"What else did I do on {label} {scope}?")
+        if "." in label:
+            prompts.append(f"When did I last visit {label}?")
+            prompts.append(f"Did I visit {label} {scope}?")
+            prompts.append(f"What else did I read on {label} {scope}?")
+        else:
+            prompts.append(f"When did I last use {label}?")
+            prompts.append(f"Did I use {label} {scope}?")
+            prompts.append(f"What else did I do in {label} {scope}?")
     elif query_category:
         category_label = query_category.replace("_", " ")
         prompts.append(f"What was I {category_label} {scope}?")
@@ -3396,17 +3665,7 @@ def _duration_related_queries(
     else:
         prompts.append(f"What was I doing {scope}?")
         prompts.append(f"What apps did I use {scope}?")
-    deduped: list[str] = []
-    seen: set[str] = set()
-    for prompt in prompts:
-        key = prompt.casefold()
-        if key in seen:
-            continue
-        deduped.append(prompt)
-        seen.add(key)
-        if len(deduped) >= 3:
-            break
-    return deduped
+    return _finalize_related_queries(prompts, limit=2)
 
 
 def _focus_query(query: str) -> bool:
@@ -3541,6 +3800,7 @@ def _handle_focus_session_query(
     summary_parts = [f"I found {len(focus_spans)} focus-worthy sessions."]
     if top_categories:
         summary_parts.append(f"They mostly looked like {_join_labels(top_categories)}.")
+    anchor_label = _prompt_anchor_text(strongest.session_title) or _prompt_anchor_text(_display_label(strongest))
     return QueryAnswer(
         answer=answer_text,
         summary=" ".join(summary_parts),
@@ -3548,11 +3808,11 @@ def _handle_focus_session_query(
         evidence=focus_spans[:6],
         time_scope_label=time_scope,
         result_count=len(focus_spans),
-        related_queries=[
-            "What led me to this?",
-            "What happened after this focus session?",
+        related_queries=_finalize_related_queries([
+            f"What led to {anchor_label}?" if anchor_label else "",
+            f"What happened after {anchor_label}?" if anchor_label else "",
             "Show my attention patterns",
-        ],
+        ], original_query=query, limit=2),
     )
 
 
@@ -3597,6 +3857,7 @@ def _handle_attention_pattern_report(
         f"I found {len(focus_spans)} strong focus sessions and {len(interruption_spans)} short interruptions "
         f"in that window."
     )
+    anchor_label = _prompt_anchor_text(focus_spans[0].session_title) or _prompt_anchor_text(_display_label(focus_spans[0]))
     return QueryAnswer(
         answer=answer,
         summary=summary,
@@ -3604,11 +3865,11 @@ def _handle_attention_pattern_report(
         evidence=(focus_spans[:4] + interruption_spans[:2])[:6],
         time_scope_label=time_scope,
         result_count=len(focus_spans),
-        related_queries=[
+        related_queries=_finalize_related_queries([
             "When was I most focused?",
-            "What led me to this?",
+            f"What led to {anchor_label}?" if anchor_label else "",
             "Show my focus sessions",
-        ],
+        ], original_query=query, limit=2),
     )
 
 
@@ -3705,45 +3966,34 @@ def _build_related_queries(
 ) -> list[str]:
     prompts: list[str] = []
     target_label = None
+    target_is_domain = False
     if target_domains:
         target_label = sorted(target_domains)[0]
+        target_is_domain = True
     elif app_hint:
         target_label = app_hint
     if any(_span_has_precise_capture(span) for span in spans[:3]):
         top_topic = _top_content_topics(spans, limit=1)
-        if top_topic:
+        if top_topic and _topic_is_specific(top_topic[0]):
             prompts.append(f"What else did I read about {top_topic[0]}?")
         if target_label:
             prompts.append(f"What did I read on {target_label}?")
     for span in spans[:3]:
-        label = _display_label(span)
         app = _friendly_app_name(span.application)
-        if not target_label:
-            prompts.extend(_moment_follow_ups(span, time_scope))
         if span.url:
-            domain = _domain(span.url) or label
-            prompts.append(f"How much time did I spend on {domain} today?")
-            prompts.append(f"When did I last use {domain}?")
+            domain = _domain(span.url) or _display_label(span)
+            prompts.append(f"When did I last visit {domain}?")
         prompts.append(f"When did I last use {app}?")
-        prompts.append(f"Did I use {label} today?")
     if target_label:
-        prompts.insert(0, f"When did I last use {target_label}?")
-        prompts.insert(1, f"How much time did I spend on {target_label} today?")
+        if target_is_domain:
+            prompts.insert(0, f"When did I last visit {target_label}?")
+            prompts.insert(1, f"How much time did I spend on {target_label} today?")
+        else:
+            prompts.insert(0, f"When did I last use {target_label}?")
+            prompts.insert(1, f"How much time did I spend in {target_label} today?")
     if time_scope:
         prompts.append(f"What else was I doing {time_scope}?")
-    prompts.append(f"What did I do after {query.strip('?')}?")
-
-    deduped: list[str] = []
-    seen: set[str] = set()
-    for prompt in prompts:
-        key = prompt.casefold()
-        if key in seen or key == query.strip().casefold():
-            continue
-        deduped.append(prompt)
-        seen.add(key)
-        if len(deduped) >= 3:
-            break
-    return deduped
+    return _finalize_related_queries(prompts, original_query=query, limit=3)
 
 
 def answer_query(query: str) -> QueryAnswer:
@@ -3766,9 +4016,22 @@ def answer_query(query: str) -> QueryAnswer:
     session_context = _episodic_graph_session_context(query_vector)
 
     def _final(result: QueryAnswer) -> QueryAnswer:
-        return _attach_session_context(result, session_context)
+        return _launch_safe_finalize(
+            _attach_session_context(result, session_context),
+            original_query=query,
+        )
 
     skill = route_skill(query, get_skills())
+    if _needs_explicit_anchor(query, meaning, skill):
+        return QueryAnswer(
+            answer="I need a concrete moment, session, site, or topic for that.",
+            summary="Name the thing directly, like 'What led to Using Claude?' or 'What happened after github.com?', so I can trace it precisely.",
+            details_label="",
+            evidence=[],
+            time_scope_label=None,
+            result_count=0,
+            related_queries=[],
+        )
     if skill is not None:
         if skill.name == "learning_query":
             return _final(_handle_learning_query(query, meaning))
@@ -3896,7 +4159,12 @@ def answer_query(query: str) -> QueryAnswer:
         ranked = _apply_pairwise_reranker(query, ranked)
     if not ranked:
         if _duration_query(query):
-            fallback_answer = answer_duration_query(meaning)
+            if meaning.domain:
+                fallback_answer = f"No activity found for {meaning.domain} in that time window."
+            elif meaning.app:
+                fallback_answer = f"No activity found in {meaning.app} in that time window."
+            else:
+                fallback_answer = answer_duration_query(meaning)
             return _final(QueryAnswer(
                 answer=fallback_answer,
                 summary="This estimate comes from your local activity timeline.",
@@ -3909,6 +4177,22 @@ def answer_query(query: str) -> QueryAnswer:
                     query_category=meaning.activity_type,
                     time_scope=time_scope,
                 ),
+            ))
+        if target_domains and _content_first_query(
+            query,
+            query_category=meaning.activity_type or _query_activity_category(query),
+            target_domains=target_domains,
+            app_hint=app_hint,
+        ):
+            domain_label = sorted(target_domains)[0]
+            return _final(QueryAnswer(
+                answer=f"I could not find a precise local memory on {domain_label} for that.",
+                summary="I do not have a strong captured-content match on the site you named in that time window.",
+                details_label="",
+                evidence=[],
+                time_scope_label=time_scope,
+                result_count=0,
+                related_queries=[],
             ))
         return _final(QueryAnswer(
             answer="I could not find a strong local memory for that yet.",
@@ -3968,13 +4252,34 @@ def answer_query(query: str) -> QueryAnswer:
         if category_spans:
             relevant_spans = category_spans
 
-    content_first = bool(active_skill is not None and active_skill.name == "content_query")
-    if not content_first and _content_first_query(
+    explicit_content_query = _content_first_query(
         query,
         query_category=query_category,
         target_domains=target_domains,
         app_hint=app_hint,
-    ):
+    )
+    if target_domains and explicit_content_query:
+        strict_domain_spans = [
+            span
+            for span in relevant_spans
+            if any(_span_matches_domain(span, domain) for domain in target_domains)
+        ]
+        if strict_domain_spans:
+            relevant_spans = strict_domain_spans
+        else:
+            domain_label = sorted(target_domains)[0]
+            return _final(QueryAnswer(
+                answer=f"I could not find a precise local memory on {domain_label} for that.",
+                summary="I found local activity in this window, but not a strong captured-content match on the site you named.",
+                details_label="",
+                evidence=[],
+                time_scope_label=time_scope,
+                result_count=len(ranked),
+                related_queries=[],
+            ))
+
+    content_first = bool(active_skill is not None and active_skill.name == "content_query")
+    if not content_first and explicit_content_query:
         if any(_span_has_precise_capture(span) for span in relevant_spans[:6]):
             content_first = True
 
@@ -3988,6 +4293,16 @@ def answer_query(query: str) -> QueryAnswer:
         relevant_spans = relevant_spans[:skill_limit]
 
     if content_first:
+        if not _content_query_is_trustworthy(relevant_spans, query):
+            return _final(QueryAnswer(
+                answer="I could not recover a precise remembered item for that yet.",
+                summary="I found nearby local activity, but not a strong enough captured-content match to answer confidently.",
+                details_label="Show closest match" if relevant_spans else "",
+                evidence=relevant_spans[:1],
+                time_scope_label=time_scope,
+                result_count=len(ranked),
+                related_queries=[],
+            ))
         content_answer, content_summary, content_related = _content_query_answer(
             relevant_spans,
             query=query,
@@ -4131,9 +4446,38 @@ def answer_query(query: str) -> QueryAnswer:
             filtered = [
                 span
                 for span in spans
-                if any(_span_matches_domain(span, domain) for domain in target_domains)
+                if _span_match_fraction(span, target_domains=target_domains) >= 0.55
+                or (
+                    any(_span_matches_domain(span, domain) for domain in target_domains)
+                    and _matching_event_label(span, target_domains=target_domains)
+                )
             ]
             if filtered:
+                filtered.sort(
+                    key=lambda span: (
+                        _span_match_fraction(span, target_domains=target_domains),
+                        span.relevance,
+                        span.start_at,
+                    ),
+                    reverse=True,
+                )
+                duration_spans = filtered
+        elif app_hint:
+            filtered = [
+                span
+                for span in spans
+                if _span_match_fraction(span, app_hint=app_hint) >= 0.55
+                or (_span_match_fraction(span, app_hint=app_hint) > 0.0 and _matching_event_label(span, app_hint=app_hint))
+            ]
+            if filtered:
+                filtered.sort(
+                    key=lambda span: (
+                        _span_match_fraction(span, app_hint=app_hint),
+                        span.relevance,
+                        span.start_at,
+                    ),
+                    reverse=True,
+                )
                 duration_spans = filtered
 
         start_text = start_at.isoformat(sep=" ", timespec="seconds") if start_at else None
@@ -4165,6 +4509,14 @@ def answer_query(query: str) -> QueryAnswer:
         elif query_category:
             label = query_category.replace("_", " ")
         top_topics = _top_content_topics(duration_spans, limit=2)
+        best_moment_label = None
+        if duration_spans:
+            if target_domains:
+                best_moment_label = _matching_event_label(duration_spans[0], target_domains=target_domains)
+            elif app_hint:
+                best_moment_label = _matching_event_label(duration_spans[0], app_hint=app_hint)
+            elif query_category and duration_spans[0].activity_category == query_category:
+                best_moment_label = duration_spans[0].session_title
         answer = _duration_answer_text(
             total_seconds,
             time_scope=time_scope,
@@ -4176,7 +4528,7 @@ def answer_query(query: str) -> QueryAnswer:
             label=label if not query_category else None,
             query_category=query_category,
             top_topics=top_topics,
-            best_span=duration_spans[0] if duration_spans else None,
+            best_moment_label=best_moment_label,
         )
         return _final(QueryAnswer(
             answer=answer,
@@ -4630,17 +4982,7 @@ def _broad_summary_related_queries(spans: list[ActivitySpan], time_scope: str | 
     if top_app:
         scope = time_scope or "today"
         prompts.append(f"How much time did I spend in {top_app} {scope}?")
-    deduped: list[str] = []
-    seen: set[str] = set()
-    for prompt in prompts:
-        key = prompt.casefold()
-        if key in seen:
-            continue
-        deduped.append(prompt)
-        seen.add(key)
-        if len(deduped) >= 3:
-            break
-    return deduped
+    return _finalize_related_queries(prompts, limit=2)
 
 
 def _broad_activity_summary(
@@ -4652,6 +4994,7 @@ def _broad_activity_summary(
 ) -> tuple[str, str]:
     scope = _time_scope_lead(time_scope) if time_scope else "Recently,"
     work_focused = _work_focused_query(query)
+    partial_view = len(spans) < 2 or _low_confidence(spans[: min(len(spans), 3)])
     app_scores: Counter[str] = Counter()
     domain_scores: Counter[str] = Counter()
     category_scores: Counter[str] = Counter()
@@ -4667,11 +5010,24 @@ def _broad_activity_summary(
     top_apps = [name for name, _ in app_scores.most_common(3)]
     top_domains = [name for name, _ in domain_scores.most_common(3)]
     top_categories = [name.replace("_", " ") for name, _ in category_scores.most_common(2)]
-    top_topics = _top_content_topics(spans, limit=3)
+    top_topics = [topic for topic in _top_content_topics(spans, limit=3) if _topic_is_specific(topic)]
+    use_topic_summary = bool(top_topics) and (bool(query_category) or work_focused)
+
+    if partial_view:
+        if query_category and top_apps:
+            category_label = query_category.replace("_", " ")
+            answer = f"{scope} the clearest {category_label} activity showed up in {_join_labels(top_apps[:3])}."
+        elif top_apps:
+            answer = f"{scope} the clearest local activity showed up in {_join_labels(top_apps[:3])}."
+        elif top_domains:
+            answer = f"{scope} the clearest local activity showed up on {_join_labels(top_domains[:3])}."
+        else:
+            answer = f"{scope} I can only recover a partial outline of your activity in that window."
+        return answer, "This is a conservative overview based on the clearest local moments I could recover."
 
     if query_category:
         category_label = query_category.replace("_", " ")
-        if top_topics:
+        if use_topic_summary:
             if query_category == "reading":
                 answer = f"{scope} it looks like a lot of what you read was about {_join_labels(top_topics)}."
             elif query_category == "watching":
@@ -4684,12 +5040,10 @@ def _broad_activity_summary(
             answer = f"{scope} it looks like most of your {category_label} happened in {_join_labels(top_apps)}."
         else:
             answer = f"{scope} it looks like most of your {category_label} activity was spread across a few different moments."
-    elif work_focused and top_topics:
+    elif work_focused and use_topic_summary:
         answer = f"{scope} it looks like most of your work was around {_join_labels(top_topics)}."
     elif work_focused and top_apps:
         answer = f"{scope} it looks like most of your work happened in {_join_labels(top_apps)}."
-    elif top_topics:
-        answer = f"{scope} it looks like a lot of your time went into {_join_labels(top_topics)}."
     elif top_apps:
         answer = f"{scope} it looks like you spent most of your time in {_join_labels(top_apps)}."
     elif top_domains:
@@ -4698,7 +5052,7 @@ def _broad_activity_summary(
         answer = f"{scope} I can see the overall activity, but the labels are still a bit messy."
 
     summary_parts: list[str] = []
-    if top_topics and top_apps:
+    if use_topic_summary and top_apps:
         summary_parts.append(f"The main apps around that were {_join_labels(top_apps[:2])}.")
     if top_categories:
         summary_parts.append(f"A lot of that looked like {_join_labels(top_categories)}.")

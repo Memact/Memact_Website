@@ -1,6 +1,6 @@
 **Memact**
 
-**Version** `v7.0`
+**Version** `v8.0`
 
 Memact helps you query the past.
 It quietly records what you do on your computer and lets you find it later.
