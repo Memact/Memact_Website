@@ -29,6 +29,34 @@ const SEARCH_ENGINE_DOMAINS = new Set([
   "search.brave.com",
   "search.yahoo.com",
 ]);
+const SOCIAL_DOMAINS = new Set([
+  "twitter.com",
+  "x.com",
+  "linkedin.com",
+  "instagram.com",
+  "facebook.com",
+  "threads.net",
+]);
+const COMMERCE_DOMAINS = new Set([
+  "amazon.com",
+  "flipkart.com",
+  "ebay.com",
+  "etsy.com",
+]);
+const PAGE_TYPE_LABELS = {
+  article: "Article",
+  chat: "Chat",
+  discussion: "Discussion",
+  docs: "Documentation",
+  lyrics: "Lyrics",
+  product: "Product page",
+  qa: "Q&A",
+  repo: "Repository",
+  search: "Search results",
+  social: "Social page",
+  video: "Video",
+  web: "Web page",
+};
 
 function normalizeText(value, maxLength = 0) {
   const text = String(value || "").replace(/\s+/g, " ").trim();
@@ -284,6 +312,288 @@ function isSearchResultsPage(event) {
     url.includes("?p=") ||
     url.includes("&p=")
   );
+}
+
+function pageTypeLabel(pageType) {
+  return PAGE_TYPE_LABELS[pageType] || PAGE_TYPE_LABELS.web;
+}
+
+function cleanTopic(value) {
+  return normalizeText(value, 140)
+    .replace(/\s+/g, " ")
+    .replace(/\b(home|official site)\b/gi, "")
+    .replace(/\s+\|\s+.*$/, "")
+    .trim();
+}
+
+function extractQueryFromEvent(event) {
+  try {
+    const parsed = new URL(event.url || "");
+    const candidates = [
+      parsed.searchParams.get("q"),
+      parsed.searchParams.get("p"),
+      parsed.searchParams.get("query"),
+      parsed.searchParams.get("text"),
+      parsed.searchParams.get("search_query"),
+    ]
+      .map((value) => normalizeText(value, 120))
+      .filter(Boolean);
+    return candidates[0] || "";
+  } catch {
+    return "";
+  }
+}
+
+function inferPageType(event) {
+  const details = urlDetails(event.url || "");
+  const titleLower = normalizeText(event.title, 200).toLowerCase();
+  const bodyLower = normalizeText(event.full_text, 4000).toLowerCase();
+
+  if (isSearchResultsPage(event)) {
+    return "search";
+  }
+  if (
+    titleLower.includes("lyrics") ||
+    bodyLower.includes("lyrics:") ||
+    bodyLower.includes("official lyrics")
+  ) {
+    return "lyrics";
+  }
+  if (
+    details.hostname === "youtube.com" ||
+    details.hostname === "youtu.be" ||
+    details.hostname === "vimeo.com"
+  ) {
+    return "video";
+  }
+  if (SOCIAL_DOMAINS.has(details.hostname)) {
+    return "social";
+  }
+  if (
+    details.hostname === "stackoverflow.com" ||
+    details.hostname.endsWith(".stackexchange.com")
+  ) {
+    return "qa";
+  }
+  if (
+    details.hostname === "github.com" ||
+    details.hostname === "gitlab.com" ||
+    details.hostname === "bitbucket.org"
+  ) {
+    return "repo";
+  }
+  if (
+    details.hostname === "reddit.com" ||
+    details.hostname === "news.ycombinator.com" ||
+    details.hostname.includes("forum") ||
+    details.pathname.includes("/thread") ||
+    details.pathname.includes("/discussion") ||
+    details.pathname.includes("/comments/")
+  ) {
+    return "discussion";
+  }
+  if (
+    DOC_DOMAINS.has(details.hostname) ||
+    details.hostname.startsWith("docs.") ||
+    details.pathname.includes("/docs") ||
+    titleLower.includes("documentation") ||
+    bodyLower.includes("api reference")
+  ) {
+    return "docs";
+  }
+  if (
+    AI_DOMAINS.has(details.hostname) ||
+    titleLower.includes("chatgpt") ||
+    titleLower.includes("claude")
+  ) {
+    return "chat";
+  }
+  if (
+    COMMERCE_DOMAINS.has(details.hostname) ||
+    bodyLower.includes("add to cart") ||
+    bodyLower.includes("buy now")
+  ) {
+    return "product";
+  }
+  if (event.full_text.length >= 700 || titleLower.includes("how to") || titleLower.includes("guide")) {
+    return "article";
+  }
+  return "web";
+}
+
+function parseLyricsFacts(event) {
+  const cleanedTitle = normalizeText(event.title, 160)
+    .replace(/\((official )?lyrics?\)/gi, "")
+    .replace(/\[(official )?lyrics?\]/gi, "")
+    .trim();
+  const parts = cleanedTitle.split(/\s+-\s+/).map((part) => normalizeText(part, 100)).filter(Boolean);
+  const song = parts[0] || "";
+  const artist = parts[1] || "";
+  return { song, artist };
+}
+
+function primaryTopic(event) {
+  const title = cleanTopic(event.title);
+  if (title && title.length <= 120) {
+    return title;
+  }
+  const phrase = normalizeText(event.keyphrases?.[0], 100);
+  if (phrase) {
+    return phrase;
+  }
+  return cleanTopic(event.domain || "");
+}
+
+function buildStructuredFacts(event, pageType) {
+  const facts = [];
+
+  if (pageType === "lyrics") {
+    const { song, artist } = parseLyricsFacts(event);
+    if (song) facts.push({ label: "Song", value: song });
+    if (artist) facts.push({ label: "Artist", value: artist });
+  } else if (pageType === "search") {
+    const query = extractQueryFromEvent(event);
+    if (query) facts.push({ label: "Query", value: query });
+  } else if (pageType === "docs") {
+    const topic = primaryTopic(event);
+    if (topic) facts.push({ label: "Topic", value: topic });
+  } else if (pageType === "qa") {
+    const topic = primaryTopic(event);
+    if (topic) facts.push({ label: "Question", value: topic });
+  } else if (pageType === "discussion") {
+    const topic = primaryTopic(event);
+    if (topic) facts.push({ label: "Topic", value: topic });
+  } else if (pageType === "video") {
+    const topic = primaryTopic(event);
+    if (topic) facts.push({ label: "Video", value: topic });
+  } else if (pageType === "product") {
+    const topic = primaryTopic(event);
+    if (topic) facts.push({ label: "Product", value: topic });
+  } else if (pageType === "chat") {
+    const topic = primaryTopic(event);
+    if (topic) facts.push({ label: "Topic", value: topic });
+  } else {
+    const topic = primaryTopic(event);
+    if (topic) facts.push({ label: "Topic", value: topic });
+  }
+
+  const focus = normalizeText(event.keyphrases?.[0], 80);
+  if (focus && !facts.some((fact) => fact.value.toLowerCase() === focus.toLowerCase())) {
+    facts.push({ label: "Focus", value: focus });
+  }
+
+  return facts.slice(0, 3);
+}
+
+function buildStructuredSummary(event, pageType, facts) {
+  const site = event.domain || "this site";
+  const firstFact = facts[0]?.value || "";
+
+  if (pageType === "lyrics") {
+    const song = facts.find((fact) => fact.label === "Song")?.value || firstFact;
+    const artist = facts.find((fact) => fact.label === "Artist")?.value || "";
+    if (song && artist) {
+      return `Lyrics page for "${song}" by ${artist}.`;
+    }
+    if (song) {
+      return `Lyrics page for "${song}".`;
+    }
+    return `Lyrics page on ${site}.`;
+  }
+
+  if (pageType === "search") {
+    const query = facts.find((fact) => fact.label === "Query")?.value || "";
+    return query ? `Search results page for "${query}".` : `Search results page on ${site}.`;
+  }
+
+  if (pageType === "docs") {
+    return firstFact ? `Documentation page about ${firstFact}.` : `Documentation page on ${site}.`;
+  }
+
+  if (pageType === "qa") {
+    return firstFact ? `Question and answer page about ${firstFact}.` : `Question and answer page on ${site}.`;
+  }
+
+  if (pageType === "discussion") {
+    return firstFact ? `Discussion page about ${firstFact}.` : `Discussion page on ${site}.`;
+  }
+
+  if (pageType === "video") {
+    return firstFact ? `Video page for ${firstFact}.` : `Video page on ${site}.`;
+  }
+
+  if (pageType === "repo") {
+    return firstFact ? `Repository page about ${firstFact}.` : `Repository page on ${site}.`;
+  }
+
+  if (pageType === "product") {
+    return firstFact ? `Product page for ${firstFact}.` : `Product page on ${site}.`;
+  }
+
+  if (pageType === "chat") {
+    return firstFact ? `Chat page about ${firstFact}.` : `Chat page on ${site}.`;
+  }
+
+  if (pageType === "social") {
+    return firstFact ? `Social page about ${firstFact}.` : `Social page on ${site}.`;
+  }
+
+  return firstFact ? `Saved page about ${firstFact}.` : `Saved page on ${site}.`;
+}
+
+function isNoiseLine(line) {
+  const lower = line.toLowerCase();
+  if (!lower) {
+    return true;
+  }
+  if (/^[\-=*_#|.]{6,}$/.test(line)) {
+    return true;
+  }
+  if (/(click the bell|subscribe|background picture by|contact\/submissions|official site|follow us|stream now|sponsored|advertisement|loading public)/i.test(lower)) {
+    return true;
+  }
+  if (/(this summary was generated by ai|based on sources|learn more about bing search results)/i.test(lower)) {
+    return true;
+  }
+  if (/https?:\/\/\S+/i.test(line) && line.length < 180) {
+    return true;
+  }
+  if (/@/.test(line) && lower.includes("contact")) {
+    return true;
+  }
+  return false;
+}
+
+function buildDisplayExcerpt(event, pageType) {
+  const sourceText = normalizeRichText(event.full_text || event.snippet, 0);
+  if (!sourceText) {
+    return "";
+  }
+
+  const cleanedLines = [];
+  for (const rawLine of sourceText.split(/\n+/)) {
+    let line = normalizeText(rawLine, 280);
+    if (!line) {
+      continue;
+    }
+    line = line.replace(/^lyrics\s*:\s*/i, "").trim();
+    if (!line || isNoiseLine(line)) {
+      continue;
+    }
+    if (cleanedLines[cleanedLines.length - 1]?.toLowerCase() === line.toLowerCase()) {
+      continue;
+    }
+    cleanedLines.push(line);
+  }
+
+  if (!cleanedLines.length) {
+    return compactText(event.snippet, 320);
+  }
+
+  const excerpt = pageType === "lyrics"
+    ? cleanedLines.slice(0, 4).join(" ")
+    : cleanedLines.slice(0, 3).join(" ");
+  return compactText(excerpt, 340);
 }
 
 function sessionMode(events) {
@@ -752,8 +1062,15 @@ function buildRelatedQueries(primaryEvent, primarySession, operator) {
 }
 
 function decorateEvent(event, session) {
+  const pageType = inferPageType(event);
+  const factItems = buildStructuredFacts(event, pageType);
   return {
     ...event,
+    page_type: pageType,
+    page_type_label: pageTypeLabel(pageType),
+    structured_summary: buildStructuredSummary(event, pageType, factItems),
+    fact_items: factItems,
+    display_excerpt: buildDisplayExcerpt(event, pageType),
     session: session
       ? {
           id: session.id,

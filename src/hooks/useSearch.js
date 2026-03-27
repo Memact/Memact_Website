@@ -150,6 +150,18 @@ function normalizeResult(item, index = 0) {
     beforeContext: normalize(item?.before_context || item?.beforeContext),
     afterContext: normalize(item?.after_context || item?.afterContext),
     momentSummary: normalize(item?.moment_summary || item?.momentSummary),
+    pageType: normalize(item?.page_type || item?.pageType),
+    pageTypeLabel: normalize(item?.page_type_label || item?.pageTypeLabel),
+    structuredSummary: normalize(item?.structured_summary || item?.structuredSummary),
+    displayExcerpt: normalize(item?.display_excerpt || item?.displayExcerpt),
+    factItems: Array.isArray(item?.fact_items || item?.factItems)
+      ? (item?.fact_items || item?.factItems)
+          .map((entry) => ({
+            label: normalize(entry?.label),
+            value: normalize(entry?.value),
+          }))
+          .filter((entry) => entry.label && entry.value)
+      : [],
     raw: item || {},
   }
 }

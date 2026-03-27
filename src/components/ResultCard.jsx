@@ -60,13 +60,13 @@ export default function ResultCard({ result, onOpen, onSelect }) {
   const appLabel = toTitleCase(result.application || 'Browser')
   const capturedLabel = formatDateTime(result.occurred_at)
   const interaction = result.interactionType ? toTitleCase(result.interactionType) : ''
-  const snippet = compactSnippet(result.snippet || result.fullText)
-  const meta = [
-    capturedLabel,
-    appLabel,
-    interaction,
-    result.duplicateCount > 1 ? `${result.duplicateCount} similar captures` : '',
+  const summary = result.structuredSummary || compactSnippet(result.snippet || result.fullText)
+  const excerpt = compactSnippet(result.displayExcerpt || result.snippet || result.fullText)
+  const facts = [
+    result.pageTypeLabel ? { label: 'Type', value: result.pageTypeLabel } : null,
+    ...(Array.isArray(result.factItems) ? result.factItems.slice(0, 2) : []),
   ].filter(Boolean)
+  const meta = [capturedLabel, appLabel, interaction].filter(Boolean)
 
   return (
     <article
@@ -84,7 +84,19 @@ export default function ResultCard({ result, onOpen, onSelect }) {
       <p className="evidence-url">{urlLabel}</p>
       <h3 className="evidence-title">{result.title || 'Untitled memory'}</h3>
       {meta.length ? <p className="evidence-meta">{meta.join(' - ')}</p> : null}
-      {snippet ? <p className="evidence-snippet">{snippet}</p> : null}
+      {summary ? <p className="evidence-summary">{summary}</p> : null}
+
+      {facts.length ? (
+        <div className="evidence-fact-row">
+          {facts.map((fact) => (
+            <span key={`${fact.label}-${fact.value}`} className="evidence-fact-pill">
+              <strong>{fact.label}:</strong> {fact.value}
+            </span>
+          ))}
+        </div>
+      ) : null}
+
+      {excerpt && excerpt !== summary ? <p className="evidence-snippet">{excerpt}</p> : null}
 
       <div className="evidence-footer">
         <span className="evidence-availability">

@@ -273,6 +273,7 @@ function MemoryDetailDialog({ result, onOpen, onClose }) {
     result.interactionType ? { label: 'Activity', value: toTitleCase(result.interactionType) } : null,
     result.duplicateCount > 1 ? { label: 'Similar captures', value: `${result.duplicateCount}` } : null,
   ].filter(Boolean)
+  const factItems = Array.isArray(result.factItems) ? result.factItems : []
 
   const sessionLabel =
     result.session?.label ||
@@ -314,6 +315,27 @@ function MemoryDetailDialog({ result, onOpen, onClose }) {
 
       {result.url ? <p className="browser-url">{result.url}</p> : null}
 
+      {result.structuredSummary ? (
+        <div className="memory-detail-body">
+          <div className="refine-heading">SUMMARY</div>
+          <p className="dialog-body">{result.structuredSummary}</p>
+        </div>
+      ) : null}
+
+      {factItems.length ? (
+        <div className="memory-detail-body">
+          <div className="refine-heading">FACTS</div>
+          <div className="answer-detail-grid">
+            {factItems.map((item) => (
+              <div key={`${item.label}-${item.value}`} className="answer-detail-card">
+                <span className="answer-detail-label">{item.label}</span>
+                <span className="answer-detail-value">{item.value}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
+
       {snippetText && snippetText !== fullText ? (
         <div className="memory-detail-body">
           <div className="refine-heading">SAVED SNIPPET</div>
@@ -345,17 +367,6 @@ function OverflowMenu({ style, onClose, onAction }) {
       </button>
       <button type="button" className="menu-item" onClick={() => onAction('privacy')}>
         Privacy Notice
-      </button>
-      <div className="menu-separator" />
-      <button
-        type="button"
-        className="menu-item menu-item--danger"
-        onClick={() => {
-          onAction('quit')
-          onClose?.()
-        }}
-      >
-        Quit
       </button>
     </div>
   )
@@ -454,7 +465,7 @@ export default function Search({ extension }) {
       : `No local matches for "${lastSubmittedQuery}"`
     : 'Local matches'
   const resultsSubtitle = resultCount
-    ? 'Newest and strongest matches are shown first. Click any card to open the full extracted memory.'
+    ? 'Sorted by match strength and recency. Click any card to open the full saved memory.'
     : 'Try a different phrase, app name, or site.'
 
   const showBackControls = Boolean(search.query.trim()) || resultsMode
@@ -564,9 +575,6 @@ export default function Search({ extension }) {
     if (action === 'privacy') {
       setActiveDialog('privacy')
       return
-    }
-    if (action === 'quit') {
-      window.close()
     }
   }
 
