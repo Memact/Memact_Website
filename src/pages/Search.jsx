@@ -101,7 +101,55 @@ const STRUCTURED_POINT_IGNORE = [
   /^show raw captured text$/i,
 ]
 
-function cleanStructuredPoint(value) {
+const STRUCTURED_POINT_SYNTHETIC = [
+  /^(article|page|document|pdf|website|search results?) about\b/i,
+  /^google results page\b/i,
+  /^captured (page view|results)\b/i,
+  /^full extracted (text|memory)\b/i,
+  /^local results?\b/i,
+]
+
+const STRUCTURED_POINT_STOPWORDS = new Set([
+  'a',
+  'an',
+  'and',
+  'as',
+  'at',
+  'by',
+  'for',
+  'from',
+  'in',
+  'into',
+  'is',
+  'no',
+  'of',
+  'on',
+  'or',
+  'the',
+  'to',
+  'with',
+])
+
+const STRUCTURED_POINT_ACRONYMS = new Set([
+  'AI',
+  'AEEE',
+  'API',
+  'BTECH',
+  'CD',
+  'CI',
+  'CSS',
+  'HTML',
+  'JEE',
+  'NRI',
+  'OCI',
+  'PDF',
+  'PIO',
+  'UI',
+  'UX',
+  'VITE',
+])
+
+function enhancedCleanStructuredPoint(value) {
   return normalize(
     String(value || '')
       .replace(/([a-z])([A-Z])/g, '$1 $2')
@@ -176,6 +224,186 @@ function lintStructuredPoint(value) {
   return cleaned
 }
 
+function mostlyUppercase(text) {
+  const letters = String(text || '').match(/[A-Za-z]/g) || []
+  if (letters.length < 6) {
+    return false
+  }
+
+  const uppercase = String(text || '').match(/[A-Z]/g) || []
+  return uppercase.length / letters.length >= 0.7
+}
+
+function hasVerbLikeWord(text) {
+  return /\b(is|are|was|were|be|being|been|has|have|had|can|could|will|would|should|includes?|offers?|supports?|shows?|provides?|explains?|lists?|contains?|covers?|requires?|allows?|helps?|opens?|starts?|ends?|uses?|admits?|applies?|gives?)\b/i.test(
+    text
+  )
+}
+
+function normalizeStructuredToken(token, index) {
+  const original = String(token || '')
+  const core = original.replace(/^[("'`]+|[)"'`.,!?;:]+$/g, '')
+  if (!core) {
+    return original
+  }
+
+  const uppercaseCore = core.toUpperCase()
+  const normalizedCore = uppercaseCore.replace(/[^A-Z0-9]/g, '')
+
+  if (
+    STRUCTURED_POINT_ACRONYMS.has(normalizedCore) ||
+    (/^[A-Z0-9/+.-]{2,10}$/.test(core) && !STRUCTURED_POINT_STOPWORDS.has(uppercaseCore.toLowerCase()))
+  ) {
+    return original
+  }
+
+  if (/^[A-Z][a-z]/.test(core) && !mostlyUppercase(core)) {
+    return original
+  }
+
+  let nextCore = core.toLowerCase()
+  if (index === 0) {
+    nextCore = nextCore.charAt(0).toUpperCase() + nextCore.slice(1)
+  }
+
+  return original.replace(core, nextCore)
+}
+
+function normalizePhraseCase(value) {
+  return normalize(
+    String(value || '')
+      .split(/\s+/)
+      .map((token, index) => normalizeStructuredToken(token, index))
+      .join(' ')
+  )
+}
+
+function syntheticStructuredPoint(text) {
+  return STRUCTURED_POINT_SYNTHETIC.some((pattern) => pattern.test(text))
+}
+
+function truncatedStructuredPoint(text) {
+  return /[:/-]\s*$/.test(text) || /\b(and|or|for|to|of|in|with|about|from|on|at|by)\s*$/i.test(text)
+}
+
+function repairShoutPoint(value) {
+  const cleaned = normalize(value)
+  const match = cleaned.match(/^([A-Z][A-Za-z'’/&() -]{3,40})\s+([A-Z][A-Z0-9/&()'’ -]{6,})[!?.:]*$/)
+  if (!match) {
+    return cleaned
+  }
+
+  const label = normalizePhraseCase(match[1]).replace(/\bUpdates\b/, 'updates')
+  const body = normalizePhraseCase(match[2])
+  return `${label}: ${body}.`
+}
+
+function repairHeadingPoint(value) {
+  const base = normalize(value).replace(/[:.!?]+$/, '').trim()
+  if (!base) {
+    return ''
+  }
+
+  const normalizedBase = normalizePhraseCase(base)
+    .replace(/\s*\/\s*/g, ' / ')
+    .replace(/\s{2,}/g, ' ')
+    .trim()
+
+  const admissionsMatch = normalizedBase.match(/^(.*?\badmissions?)\s+(OCI\s*\/\s*PIO\s+students?)$/i)
+  if (admissionsMatch) {
+    return `The page includes ${admissionsMatch[1]} for ${admissionsMatch[2]}.`
+  }
+
+  if (/^(what|how|when|where|why|who|which)\b/i.test(normalizedBase)) {
+    const lowered = normalizedBase.charAt(0).toLowerCase() + normalizedBase.slice(1)
+    return `The page explains ${lowered}.`
+  }
+
+  if (normalizedBase.split(/\s+/).length < 2) {
+    return ''
+  }
+
+  return `The page includes details about ${normalizedBase}.`
+}
+
+function cleanStructuredPoint(value) {
+  return normalize(
+    String(value || '')
+      .replace(/([a-z])([A-Z])/g, '$1 $2')
+      .replace(/(\d)([A-Z])/g, '$1 $2')
+      .replace(/([A-Z]{2,})([A-Z][a-z])/g, '$1 $2')
+      .replace(/\s*:\s*/g, ': ')
+      .replace(/\s*-\s*/g, ' - ')
+      .replace(/\s{2,}/g, ' ')
+  )
+    .replace(/^[\u2022*-]\s*/, '')
+    .replace(/^\(?([ivxlcdm]+|\d+)\)?[.)-]?\s+/i, '')
+    .replace(/\s*[-–—]\s*/g, ' - ')
+    .replace(/\bagent based\b/gi, 'agent-based')
+    .replace(/\bnon\s*-\s*resident\b/gi, 'non-resident')
+}
+
+function enhancedLintStructuredPoint(value, result) {
+  let cleaned = enhancedCleanStructuredPoint(value)
+  if (!cleaned) {
+    return ''
+  }
+
+  const noiseScore = formattingNoiseScore(cleaned)
+  if (noiseScore >= 0.72) {
+    return ''
+  }
+
+  cleaned = repairShoutPoint(cleaned)
+
+  const words = cleaned.split(/\s+/).filter(Boolean)
+  if (words.length < 4 && cleaned.length < 24) {
+    return ''
+  }
+
+  if (syntheticStructuredPoint(cleaned) || /^(github|google|search|drive|introduction)$/i.test(cleaned)) {
+    return ''
+  }
+
+  const normalizedTitle = normalize(result?.title).toLowerCase()
+  const normalizedSummary = normalize(result?.structuredSummary).toLowerCase()
+  const lowered = cleaned.toLowerCase()
+
+  if (normalizedTitle && (lowered === normalizedTitle || lowered === `article about ${normalizedTitle}.`)) {
+    return ''
+  }
+
+  if (normalizedSummary && lowered === normalizedSummary) {
+    return ''
+  }
+
+  if (mostlyUppercase(cleaned)) {
+    cleaned = normalizePhraseCase(cleaned)
+  }
+
+  if (/:$/.test(cleaned) || (!hasVerbLikeWord(cleaned) && words.length <= 8)) {
+    cleaned = repairHeadingPoint(cleaned)
+  }
+
+  cleaned = normalize(cleaned)
+  if (!cleaned || syntheticStructuredPoint(cleaned) || truncatedStructuredPoint(cleaned)) {
+    return ''
+  }
+
+  if (!hasVerbLikeWord(cleaned) && cleaned.split(/\s+/).length < 5) {
+    return ''
+  }
+
+  cleaned = cleaned.replace(/\s*:\s*(?=[A-Z])/g, ': ')
+  cleaned = cleaned.replace(/\s{2,}/g, ' ').trim()
+
+  if (!/[.!?]$/.test(cleaned)) {
+    cleaned = `${cleaned}.`
+  }
+
+  return cleaned
+}
+
 function splitCandidateSentences(value) {
   const normalized = normalizeRichText(value)
   if (!normalized) {
@@ -191,7 +419,7 @@ function splitCandidateSentences(value) {
 }
 
 function usefulStructuredPoint(value, result, seen) {
-  const cleaned = lintStructuredPoint(value)
+  const cleaned = enhancedLintStructuredPoint(value, result)
   if (!cleaned) {
     return ''
   }
@@ -225,6 +453,7 @@ function deriveKeyPoints(result) {
   const seen = new Set()
   const points = []
   const derivativeItems = Array.isArray(result?.derivativeItems) ? result.derivativeItems : []
+  const factItems = Array.isArray(result?.factItems) ? result.factItems : []
   const addPoint = (value, label = '') => {
     const point = usefulStructuredPoint(
       label && !/^passage\s+\d+$/i.test(label) ? `${label}: ${value}` : value,
@@ -238,6 +467,13 @@ function deriveKeyPoints(result) {
 
   for (const entry of derivativeItems.slice(0, 4)) {
     addPoint(entry.text, entry.label)
+    if (points.length >= 5) {
+      return points
+    }
+  }
+
+  for (const item of factItems.slice(0, 4)) {
+    addPoint(`${item.label}: ${item.value}`)
     if (points.length >= 5) {
       return points
     }
