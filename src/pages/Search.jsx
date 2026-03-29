@@ -102,10 +102,78 @@ const STRUCTURED_POINT_IGNORE = [
 ]
 
 function cleanStructuredPoint(value) {
-  return normalize(value)
+  return normalize(
+    String(value || '')
+      .replace(/([a-z])([A-Z])/g, '$1 $2')
+      .replace(/(\d)([A-Z])/g, '$1 $2')
+      .replace(/([A-Z]{2,})([A-Z][a-z])/g, '$1 $2')
+      .replace(/\s*:\s*/g, ': ')
+      .replace(/\s*-\s*/g, ' - ')
+      .replace(/\s{2,}/g, ' ')
+  )
     .replace(/^[\u2022*-]\s*/, '')
     .replace(/^\(?([ivxlcdm]+|\d+)\)?[.)-]?\s+/i, '')
     .replace(/\s*[-–—]\s*/g, ' - ')
+}
+
+function repeatedTokenRatio(text) {
+  const tokens = cleanStructuredPoint(text)
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter((token) => token.length >= 2)
+
+  if (tokens.length < 4) {
+    return 0
+  }
+
+  const counts = new Map()
+  let maxCount = 0
+  for (const token of tokens) {
+    const next = (counts.get(token) || 0) + 1
+    counts.set(token, next)
+    if (next > maxCount) {
+      maxCount = next
+    }
+  }
+
+  return maxCount / tokens.length
+}
+
+function formattingNoiseScore(text) {
+  const value = String(text || '')
+  if (!value) {
+    return 1
+  }
+
+  const weirdGlyphs = (value.match(/[□�]/g) || []).length
+  const punctuationRuns = (value.match(/[|_/\\]{3,}|[.]{4,}|[-]{4,}/g) || []).length
+  const mergedWords = (value.match(/[a-z]{3,}[A-Z][a-z]+|\d{4}[A-Z][a-z]+/g) || []).length
+  const repeatedRatio = repeatedTokenRatio(value)
+
+  return weirdGlyphs * 0.3 + punctuationRuns * 0.2 + mergedWords * 0.18 + repeatedRatio
+}
+
+function lintStructuredPoint(value) {
+  const cleaned = cleanStructuredPoint(value)
+  if (!cleaned) {
+    return ''
+  }
+
+  const noiseScore = formattingNoiseScore(cleaned)
+  if (noiseScore >= 0.72) {
+    return ''
+  }
+
+  const words = cleaned.split(/\s+/).filter(Boolean)
+  if (words.length < 4 && cleaned.length < 24) {
+    return ''
+  }
+
+  if (/^(github|google|search|drive|introduction)$/i.test(cleaned)) {
+    return ''
+  }
+
+  return cleaned
 }
 
 function splitCandidateSentences(value) {
@@ -123,7 +191,7 @@ function splitCandidateSentences(value) {
 }
 
 function usefulStructuredPoint(value, result, seen) {
-  const cleaned = cleanStructuredPoint(value)
+  const cleaned = lintStructuredPoint(value)
   if (!cleaned) {
     return ''
   }
@@ -205,73 +273,19 @@ function deriveKeyPoints(result) {
   return points
 }
 
-function buildMemoryCopyText({
-  result,
-  sessionLabel,
-  displayUrl,
-  detailItems,
-  factItems,
-  keyPoints,
-  derivativeItems,
-  searchResults,
-  fullText,
-  primaryTextHeading,
-}) {
-  const lines = [result?.title || 'Memory']
-
-  if (sessionLabel) {
-    lines.push(`Session: ${sessionLabel}`)
+function buildPointCopyText({ keyPoints, derivativeItems }) {
+  const points = Array.isArray(keyPoints) ? keyPoints.filter(Boolean) : []
+  if (points.length) {
+    return points.map((point, index) => `${index + 1}. ${point}`).join('\n')
   }
 
-  if (displayUrl) {
-    lines.push(`URL: ${displayUrl}`)
-  }
-
-  for (const item of detailItems || []) {
-    lines.push(`${item.label}: ${item.value}`)
-  }
-
-  if (result?.structuredSummary) {
-    lines.push('', 'Summary', result.structuredSummary)
-  }
-
-  if (keyPoints?.length) {
-    lines.push('', 'Key points')
-    keyPoints.forEach((point, index) => {
-      lines.push(`${index + 1}. ${point}`)
-    })
-  }
-
-  if (factItems?.length) {
-    lines.push('', 'Facts')
-    factItems.forEach((item) => {
-      lines.push(`- ${item.label}: ${item.value}`)
-    })
-  }
-
-  if (derivativeItems?.length) {
-    lines.push('', 'Matched passages')
-    derivativeItems.forEach((item, index) => {
-      const prefix =
-        item?.label && !/^passage\s+\d+$/i.test(item.label)
-          ? `${item.label}: `
-          : `${index + 1}. `
-      lines.push(`${prefix}${item.text}`)
-    })
-  }
-
-  if (searchResults?.length) {
-    lines.push('', 'Captured results')
-    searchResults.forEach((item, index) => {
-      lines.push(`${index + 1}. ${item}`)
-    })
-  }
-
-  if (fullText) {
-    lines.push('', primaryTextHeading, fullText)
-  }
-
-  return lines.filter(Boolean).join('\n')
+  const passages = Array.isArray(derivativeItems) ? derivativeItems.filter((entry) => entry?.text) : []
+  return passages
+    .slice(0, 5)
+    .map((entry, index) =>
+      `${index + 1}. ${entry?.label && !/^passage\s+\d+$/i.test(entry.label) ? `${entry.label}: ` : ''}${entry.text}`
+    )
+    .join('\n')
 }
 
 function downloadExtensionPackage() {
@@ -703,10 +717,12 @@ function BrowserSetupDialog({ browserInfo, mode, extensionDetected, extensionRea
 
 function MemoryDetailDialog({ result, onOpen, onClose }) {
   const [rawVisible, setRawVisible] = useState(false)
+  const [fullTextVisible, setFullTextVisible] = useState(false)
   const [copiedState, setCopiedState] = useState('')
 
   useEffect(() => {
     setRawVisible(false)
+    setFullTextVisible(false)
     setCopiedState('')
   }, [result?.id])
 
@@ -746,31 +762,8 @@ function MemoryDetailDialog({ result, onOpen, onClose }) {
   const showRawCapturedText = rawFullText && rawFullText !== fullText
   const keyPoints = useMemo(() => deriveKeyPoints(result), [result])
   const copyPayload = useMemo(
-    () =>
-      buildMemoryCopyText({
-        result,
-        sessionLabel,
-        displayUrl,
-        detailItems,
-        factItems,
-        keyPoints,
-        derivativeItems,
-        searchResults,
-        fullText,
-        primaryTextHeading,
-      }),
-    [
-      derivativeItems,
-      detailItems,
-      displayUrl,
-      factItems,
-      fullText,
-      keyPoints,
-      primaryTextHeading,
-      result,
-      searchResults,
-      sessionLabel,
-    ]
+    () => buildPointCopyText({ keyPoints, derivativeItems }),
+    [derivativeItems, keyPoints]
   )
 
   const handleCopyMemory = async () => {
@@ -791,7 +784,7 @@ function MemoryDetailDialog({ result, onOpen, onClose }) {
       onClose={onClose}
       headerActions={
         <button type="button" className="dialog-utility-button" onClick={handleCopyMemory}>
-          {copiedState === 'copied' ? 'Copied' : 'Copy'}
+          {copiedState === 'copied' ? 'Copied' : 'Copy points'}
         </button>
       }
       footer={
@@ -972,8 +965,23 @@ function MemoryDetailDialog({ result, onOpen, onClose }) {
 
       {fullText ? (
         <div className="memory-detail-body">
-          <div className="refine-heading">{primaryTextHeading}</div>
-          <MathRichText className="memory-detail-text" text={fullText} />
+          <div className="memory-section-header">
+            <div className="refine-heading">{primaryTextHeading}</div>
+            <button
+              type="button"
+              className="details-button memory-section-toggle"
+              onClick={() => setFullTextVisible((current) => !current)}
+            >
+              {fullTextVisible ? 'Hide full text' : 'Show full text'}
+            </button>
+          </div>
+          {fullTextVisible ? (
+            <MathRichText className="memory-detail-text" text={fullText} />
+          ) : (
+            <p className="memory-section-hint">
+              Expand to inspect the complete captured text for this memory.
+            </p>
+          )}
         </div>
       ) : (
         <p className="dialog-body">No full extracted text is available for this memory yet.</p>

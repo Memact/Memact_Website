@@ -912,6 +912,31 @@ button:disabled {
   gap: 10px;
 }
 
+.memory-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.memory-section-toggle {
+  justify-self: auto;
+  flex: 0 0 auto;
+}
+
+.memory-section-hint {
+  margin: 0;
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1px solid var(--border-soft);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text-faint);
+  font-size: 13px;
+  line-height: 1.55;
+  font-family: var(--content-font-stack);
+}
+
 .memory-detail-text {
   margin: 0;
   padding: 14px 16px;
