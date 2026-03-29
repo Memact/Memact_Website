@@ -11,7 +11,7 @@
   src: url('../../assets/fonts/Orbitron-Bold.ttf') format('truetype');
   font-weight: 700;
   font-style: normal;
-  font-display: swap;
+  font-display: block;
 }
 
 :root {
@@ -21,6 +21,12 @@
   --safe-left: env(safe-area-inset-left);
   --ui-font-stack:
     'IBM Plex Sans',
+    'Segoe UI',
+    'Helvetica Neue',
+    Arial,
+    sans-serif;
+  --brand-font-stack:
+    'Orbitron',
     'Segoe UI',
     'Helvetica Neue',
     Arial,
@@ -237,7 +243,7 @@ button:disabled {
   height: 62px;
   display: grid;
   place-items: center;
-  font-family: 'Orbitron', 'IBM Plex Sans', sans-serif;
+  font-family: var(--brand-font-stack);
   font-size: 46px;
   font-weight: 700;
   line-height: 1;
@@ -349,7 +355,7 @@ button:disabled {
 
 .hero-title {
   margin: 0;
-  font-family: 'Orbitron', 'IBM Plex Sans', sans-serif;
+  font-family: var(--brand-font-stack);
   font-size: clamp(52px, 8vw, 68px);
   font-weight: 700;
   text-transform: lowercase;
@@ -955,10 +961,24 @@ button:disabled {
   max-width: 100%;
 }
 
+.math-rich-text__math svg {
+  max-width: 100%;
+  height: auto;
+}
+
+.math-rich-text mjx-container {
+  max-width: 100%;
+}
+
 .math-rich-text__math--inline {
   display: inline-block;
   vertical-align: middle;
   max-width: 100%;
+}
+
+.math-rich-text__math--inline svg {
+  display: inline-block;
+  vertical-align: middle;
 }
 
 .math-rich-text__math--block {
@@ -967,6 +987,11 @@ button:disabled {
   overflow-x: auto;
   overflow-y: hidden;
   padding: 6px 0;
+}
+
+.math-rich-text__math--block svg {
+  display: block;
+  min-width: fit-content;
 }
 
 .math-rich-text .katex-display {
@@ -1111,6 +1136,19 @@ button:disabled {
   gap: 10px;
 }
 
+.dialog-copy-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.dialog-copy-stack {
+  min-width: 0;
+  display: grid;
+  gap: 10px;
+}
+
 .dialog-title {
   margin: 0;
   color: var(--text);
@@ -1125,6 +1163,32 @@ button:disabled {
   line-height: 1.6;
   font-family: var(--content-font-stack);
   overflow-wrap: anywhere;
+}
+
+.dialog-toolbar {
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-end;
+  gap: 8px;
+  flex: 0 0 auto;
+}
+
+.dialog-utility-button {
+  min-height: 34px;
+  padding: 0 14px;
+  border-radius: 12px;
+  border: 1px solid var(--border-soft);
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text-soft);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.dialog-utility-button:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: var(--border);
+  color: var(--text);
 }
 
 .dialog-error {
@@ -1258,6 +1322,46 @@ button:disabled {
 .memory-result-list {
   display: grid;
   gap: 10px;
+}
+
+.structured-point-list {
+  display: grid;
+  gap: 10px;
+}
+
+.structured-point-item {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1px solid var(--border-soft);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.structured-point-index {
+  color: rgba(255, 255, 255, 0.54);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.7;
+}
+
+.structured-point-copy {
+  min-width: 0;
+  color: rgba(255, 255, 255, 0.92);
+  font-size: 14px;
+  line-height: 1.6;
+  font-family: var(--content-font-stack);
+  overflow-wrap: anywhere;
+}
+
+.memory-passage-label {
+  margin-bottom: 6px;
+  color: rgba(255, 255, 255, 0.62);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
 .connection-summary {
@@ -1410,6 +1514,14 @@ button:disabled {
   min-width: 0;
   font-family: var(--content-font-stack);
   overflow-wrap: anywhere;
+}
+
+.memory-result-label {
+  color: rgba(255, 255, 255, 0.62);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
 }
 
 .memory-result-index {
@@ -1790,6 +1902,15 @@ button:disabled {
 
   .dialog-panel {
     border-radius: 20px;
+  }
+
+  .dialog-copy-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .dialog-toolbar {
+    justify-content: flex-start;
   }
 
   .memory-detail-text {

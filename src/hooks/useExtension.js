@@ -39,11 +39,22 @@ export function useExtension() {
   const pending = useRef(new Map())
 
   useEffect(() => {
-    const init = initializeWebMemoryStore(environment)
-    setWebMemoryCount(Number(init.memoryCount || 0))
+    let cancelled = false
+
+    initializeWebMemoryStore(environment).then((init) => {
+      if (cancelled) {
+        return
+      }
+      setWebMemoryCount(Number(init?.memoryCount || 0))
+    })
+
     if (useWebFallback) {
       setReady(true)
       setDetected(true)
+    }
+
+    return () => {
+      cancelled = true
     }
   }, [environment, useWebFallback])
 
@@ -173,39 +184,39 @@ export function useExtension() {
 
   const search = useCallback((query, limit = 20) => {
     if (useWebFallback && !bridgeDetected) {
-      return Promise.resolve(webMemorySearch(query, limit, environment))
+      return webMemorySearch(query, limit, environment)
     }
     return sendToExtension('MEMACT_SEARCH', { query, limit })
   }, [bridgeDetected, environment, sendToExtension, useWebFallback])
 
   const getSuggestions = useCallback((query = '', timeFilter = null, limit = 6) => {
     if (useWebFallback && !bridgeDetected) {
-      return Promise.resolve(webMemorySuggestions(query, timeFilter, limit))
+      return webMemorySuggestions(query, timeFilter, limit)
     }
     return sendToExtension('MEMACT_SUGGESTIONS', { query, timeFilter, limit })
   }, [bridgeDetected, sendToExtension, useWebFallback])
 
   const getStatus = useCallback(() => {
     if (useWebFallback && !bridgeDetected) {
-      return Promise.resolve(webMemoryStatus(environment))
+      return webMemoryStatus(environment)
     }
     return sendToExtension('MEMACT_STATUS', {})
   }, [bridgeDetected, environment, sendToExtension, useWebFallback])
 
   const getStats = useCallback(() => {
     if (useWebFallback && !bridgeDetected) {
-      return Promise.resolve(webMemoryStats())
+      return webMemoryStats()
     }
     return sendToExtension('MEMACT_STATS', {})
   }, [bridgeDetected, sendToExtension, useWebFallback])
 
-  const clearAllData = useCallback(() => {
+  const clearAllData = useCallback(async () => {
     if (useWebFallback && !bridgeDetected) {
-      const response = clearWebMemories()
+      const response = await clearWebMemories()
       if (response?.ok) {
         setWebMemoryCount(0)
       }
-      return Promise.resolve(response)
+      return response
     }
     return sendToExtension('MEMACT_CLEAR_ALL_DATA', {})
   }, [bridgeDetected, sendToExtension, useWebFallback])

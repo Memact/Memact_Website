@@ -109,6 +109,7 @@ async function bundleExtension() {
     minify: true,
     legalComments: 'none',
     charset: 'utf8',
+    external: ['./vendor/flexsearch/index.js', './vendor/flexsearch/*', 'worker_threads'],
   })
 
   await esbuild({
@@ -145,6 +146,7 @@ async function bundleExtension() {
 
 async function main() {
   try {
+    await runCommand('node', ['scripts/sync-transformers.mjs'])
     await bundleExtension()
     await createZipArchive()
     console.log(`Created ${path.relative(projectRoot, outputZip)}`)

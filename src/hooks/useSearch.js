@@ -185,6 +185,15 @@ function normalizeResult(item, index = 0) {
     searchResults: Array.isArray(item?.search_results || item?.searchResults)
       ? (item?.search_results || item?.searchResults).map((value) => normalize(value)).filter(Boolean)
       : [],
+    derivativeItems: Array.isArray(item?.derivative_items || item?.derivativeItems)
+      ? (item?.derivative_items || item?.derivativeItems)
+          .map((entry) => ({
+            kind: normalize(entry?.kind),
+            label: normalize(entry?.label),
+            text: normalizeRichText(entry?.text),
+          }))
+          .filter((entry) => entry.text)
+      : [],
     graphSummary: normalize(item?.graph_summary || item?.graphSummary),
     connectedEvents: Array.isArray(item?.connected_events || item?.connectedEvents)
       ? (item?.connected_events || item?.connectedEvents)

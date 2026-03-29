@@ -4,6 +4,7 @@ import {
   shouldSkipCaptureProfile,
 } from "./context-pipeline.js";
 import { classifyLocalPage } from "./page-intelligence.js";
+import { evaluateSelectiveMemory } from "./selective-memory.js";
 
 const SESSION_TIMEOUT_MS = 25 * 60 * 1000;
 const SESSION_MAX_GAP_MS = 45 * 60 * 1000;
@@ -331,6 +332,12 @@ function factText(event) {
   return (event.fact_items || []).map((item) => `${item.label} ${item.value}`).join(" ");
 }
 
+function derivativeText(event) {
+  return (event.derivative_items || [])
+    .map((item) => `${item.label || ""} ${item.text || ""}`)
+    .join(" ");
+}
+
 function exactFactMatch(event, anchor) {
   return (
     exactIncludes(factText(event), anchor) ||
@@ -347,6 +354,7 @@ function hasStrongExactSignal(event, anchor) {
     exactIncludes(event.context_subject, anchor) ||
     exactIncludes(event.title, anchor) ||
     exactFactMatch(event, anchor) ||
+    exactIncludes(derivativeText(event), anchor) ||
     exactSearchQueryMatch(event, anchor)
   );
 }
@@ -437,7 +445,13 @@ function normalizeEvent(rawEvent) {
     fullText,
     keyphrases,
     context_profile_json: rawEvent.context_profile_json,
+    selective_memory_json: rawEvent.selective_memory_json,
   });
+  if (!contextProfile.selectiveMemory) {
+    contextProfile.selectiveMemory = evaluateSelectiveMemory(contextProfile, {
+      interactionType: rawEvent.interaction_type,
+    });
+  }
 
   return {
     ...rawEvent,
@@ -450,6 +464,7 @@ function normalizeEvent(rawEvent) {
     display_full_text: contextProfile.displayFullText || contextProfile.fullText || fullText,
     raw_full_text: fullText,
     search_results: contextProfile.searchResults || [],
+    derivative_items: contextProfile.derivativeItems || [],
     keyphrases: contextProfile.keyphrases?.length ? contextProfile.keyphrases : keyphrases,
     embedding,
     occurred_at: occurredAt,
@@ -468,6 +483,7 @@ function normalizeEvent(rawEvent) {
     capture_intent: contextProfile.captureIntent || null,
     clutter_audit: contextProfile.clutterAudit || null,
     local_judge: contextProfile.localJudge || null,
+    selective_memory: contextProfile.selectiveMemory || null,
     canonicalFingerprint: [
       canonicalUrl(rawEvent.url || ""),
       (contextProfile.title || title).toLowerCase(),
@@ -1553,6 +1569,7 @@ async function rankEvents(text, events, embedText, cosineSimilarity, options = {
       const fullTextLower = String(event.full_text || "").toLowerCase();
       const contextLower = String(event.context_text || "").toLowerCase();
       const factsLower = factText(event).toLowerCase();
+      const derivativesLower = derivativeText(event).toLowerCase();
       const searchQueryLower = eventSearchQuery(event).toLowerCase();
       const lexical = tokenCoverage(tokens, [
         event.title,
@@ -1563,6 +1580,7 @@ async function rankEvents(text, events, embedText, cosineSimilarity, options = {
         event.application,
         event.keyphrases.join(" "),
         event.context_text,
+        derivativeText(event),
       ].join(" "));
       const titleBoost = tokenCoverage(tokens, event.title);
       const keyphraseBoost = tokenCoverage(tokens, event.keyphrases.join(" "));
@@ -1571,6 +1589,7 @@ async function rankEvents(text, events, embedText, cosineSimilarity, options = {
       const entityBoost = tokenCoverage(tokens, event.context_entities.join(" "));
       const topicBoost = tokenCoverage(tokens, event.context_topics.join(" "));
       const factBoost = tokenCoverage(tokens, factText(event));
+      const derivativeBoost = tokenCoverage(tokens, derivativeText(event));
       const searchQueryBoost = tokenCoverage(tokens, eventSearchQuery(event));
       const contextBoost = tokenCoverage(tokens, event.context_text);
       const tokenHitCount = countTokenHits(tokens, [
@@ -1588,6 +1607,8 @@ async function rankEvents(text, events, embedText, cosineSimilarity, options = {
       const exactSubjectMatch =
         normalizedQueryLower && contextLower.includes(normalizedQueryLower) ? 1 : 0;
       const exactFactValueMatch = normalizedQueryLower && factsLower.includes(normalizedQueryLower) ? 1 : 0;
+      const exactDerivativeMatch =
+        normalizedQueryLower && derivativesLower.includes(normalizedQueryLower) ? 1 : 0;
       const exactSearchQueryValueMatch =
         normalizedQueryLower && searchQueryLower.includes(normalizedQueryLower) ? 1 : 0;
       const domainBoost = domainHint && event.domain === domainHint ? 1 : 0;
@@ -1598,10 +1619,14 @@ async function rankEvents(text, events, embedText, cosineSimilarity, options = {
       const organizationScore = Number(event.clutter_audit?.organizationScore || 0);
       const captureMode = normalizeText(event.capture_intent?.captureMode).toLowerCase();
       const qualityLabel = normalizeText(event.local_judge?.qualityLabel).toLowerCase();
+      const rememberScore = Number(event.selective_memory?.rememberScore || 0);
+      const recallWeight = Number(event.selective_memory?.recallWeight || 1);
+      const memoryAction = normalizeText(event.selective_memory?.memoryAction).toLowerCase();
       const strongExactSignal =
         exactTitleMatch ||
         exactSubjectMatch ||
         exactFactValueMatch ||
+        exactDerivativeMatch ||
         exactSearchQueryValueMatch;
       const searchResultsPenalty =
         isSearchResultsPage(event) && operatorName !== "search_query" ? 0.42 : isSearchResultsPage(event) ? 0.08 : 0;
@@ -1621,6 +1646,21 @@ async function rankEvents(text, events, embedText, cosineSimilarity, options = {
       const captureBonus =
         captureMode === "full" ? 0.05 : captureMode === "structured" ? 0.01 : 0;
       const lowValuePenalty = isLowValueEvent(event) && !strongExactSignal ? 0.24 : 0;
+      const selectiveWeightBonus = (recallWeight - 1) * 0.18;
+      const selectiveScoreBonus =
+        rememberScore >= 0.78
+          ? 0.06
+          : rememberScore >= 0.58
+            ? 0.03
+            : rememberScore >= 0.35
+              ? 0
+              : -0.05;
+      const memoryActionPenalty =
+        memoryAction === "demote" && !strongExactSignal
+          ? 0.08
+          : memoryAction === "compress" && !strongExactSignal
+            ? 0.02
+            : 0;
       const recencyWeight =
         strongExactSignal || lexical >= 0.28 || semantic >= 0.45 || tokenHitCount >= Math.max(2, tokens.length - 1)
           ? 0.16
@@ -1635,11 +1675,13 @@ async function rankEvents(text, events, embedText, cosineSimilarity, options = {
         entityBoost * 0.07 +
         topicBoost * 0.06 +
         factBoost * 0.08 +
+        derivativeBoost * 0.08 +
         searchQueryBoost * 0.1 +
         contextBoost * 0.08 +
         exactTitleMatch * 0.16 +
         exactSubjectMatch * 0.14 +
         exactFactValueMatch * 0.12 +
+        exactDerivativeMatch * 0.08 +
         exactSearchQueryValueMatch * 0.14 +
         exactUrlMatch * 0.02 +
         exactSnippetMatch * 0.03 +
@@ -1649,12 +1691,15 @@ async function rankEvents(text, events, embedText, cosineSimilarity, options = {
         recencyBoost * recencyWeight +
         meaningfulBonus +
         captureBonus +
+        selectiveWeightBonus +
+        selectiveScoreBonus +
         organizationBonus -
         searchResultsPenalty -
         metadataPenalty -
         shellPenalty -
         genericWebPenalty -
         clutterPenalty -
+        memoryActionPenalty -
         lowValuePenalty;
       return {
         ...event,
@@ -1664,6 +1709,7 @@ async function rankEvents(text, events, embedText, cosineSimilarity, options = {
         exact_title_match: exactTitleMatch,
         exact_subject_match: exactSubjectMatch,
         exact_fact_match: exactFactValueMatch,
+        exact_derivative_match: exactDerivativeMatch,
         exact_search_query_match: exactSearchQueryValueMatch,
         exact_url_match: exactUrlMatch,
         context_score: contextBoost,
@@ -1700,6 +1746,7 @@ async function rankEvents(text, events, embedText, cosineSimilarity, options = {
         event.exact_title_match > 0 ||
         event.exact_subject_match > 0 ||
         event.exact_fact_match > 0 ||
+        event.exact_derivative_match > 0 ||
         event.exact_search_query_match > 0 ||
         event.exact_url_match > 0 ||
         event.context_score >= 0.26 ||
@@ -1977,6 +2024,7 @@ function decorateEvent(event, session, graphByEventId) {
     display_full_text: event.display_full_text || event.full_text || "",
     raw_full_text: event.raw_full_text || event.full_text || "",
     search_results: Array.isArray(event.search_results) ? event.search_results : [],
+    derivative_items: Array.isArray(event.derivative_items) ? event.derivative_items : [],
     session: session
       ? {
           id: session.id,
@@ -1991,6 +2039,7 @@ function decorateEvent(event, session, graphByEventId) {
     moment_summary: session ? `${session.label}.` : "",
     graph_summary: graphSummary(graphNode),
     connected_events: Array.isArray(graphNode?.connected) ? graphNode.connected : [],
+    selective_memory: event.selective_memory || null,
   };
 }
 

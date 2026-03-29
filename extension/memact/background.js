@@ -16,8 +16,11 @@ import {
 import { classifyLocalPage } from "./page-intelligence.js";
 import { inferCaptureIntent } from "./capture-intent.js";
 import { auditCapturedContent } from "./clutter-audit.js";
+import { applySelectiveRetention, evaluateSelectiveMemory } from "./selective-memory.js";
 import { extractKeyphrases } from "./keywords.js";
 import { answerLocalQuery } from "./query-engine.js";
+import { extractPdfTextFromUrl, looksLikePdfResource } from "./pdf-support.js";
+import { getIndexedSearchCandidates, invalidateEventSearchIndex } from "./search-index.js";
 
 const EXTENSION_VERSION = chrome.runtime.getManifest().version;
 const MEMACT_SITE_URL = "https://www.memact.com";
@@ -135,6 +138,13 @@ function shouldIgnoreCapturedPage(url, pageTitle = "") {
 
 function buildSearchableText(tabData, contextProfile = null) {
   const active = tabData.activeContext || {};
+  const retainedFullText =
+    contextProfile?.displayFullText || contextProfile?.fullText || active.fullText || "";
+  const retainedSnippet =
+    contextProfile?.displayExcerpt || contextProfile?.snippet || active.snippet || "";
+  const derivativeText = Array.isArray(contextProfile?.derivativeItems)
+    ? contextProfile.derivativeItems.map((item) => `${item.label || ""} ${item.text || ""}`).join(" ")
+    : "";
   return [
     tabData.browser,
     active.pageTitle,
@@ -142,14 +152,15 @@ function buildSearchableText(tabData, contextProfile = null) {
     active.description,
     active.selection,
     tabData.activeTab?.url || "",
-    active.snippet,
-    (active.fullText || "").slice(0, 1200),
+    retainedSnippet,
+    retainedFullText.slice(0, 1200),
     contextProfile?.subject || "",
     Array.isArray(contextProfile?.entities) ? contextProfile.entities.join(" ") : "",
     Array.isArray(contextProfile?.topics) ? contextProfile.topics.join(" ") : "",
     Array.isArray(contextProfile?.factItems)
       ? contextProfile.factItems.map((item) => `${item.label} ${item.value}`).join(" ")
       : "",
+    derivativeText,
     contextProfile?.structuredSummary || "",
     contextProfile?.contextText || "",
     contextProfile?.captureIntent?.pagePurpose || "",
@@ -234,6 +245,18 @@ function normalizeVector(vector) {
   }
   norm = Math.sqrt(norm) || 1;
   return vector.map((value) => value / norm);
+}
+
+function shouldPreferPdfExtraction(fullText = "") {
+  const normalized = normalizeRichText(fullText, 0);
+  if (!normalized) {
+    return true;
+  }
+  if (normalized.length < 320) {
+    return true;
+  }
+  const missingGlyphs = (normalized.match(/[□�]/g) || []).length;
+  return missingGlyphs >= 4;
 }
 
 async function hashEmbedding(text, dim = 384) {
@@ -668,7 +691,7 @@ async function captureActiveTabContext(tab) {
       return null;
     }
 
-    return {
+    const normalizedResult = {
       pageTitle: normalizeText(result.pageTitle, 140),
       description: normalizeText(result.description, 200),
       h1: normalizeText(result.h1, 120),
@@ -680,6 +703,28 @@ async function captureActiveTabContext(tab) {
       typingActive: Boolean(result.typingActive),
       scrollingActive: Boolean(result.scrollingActive)
     };
+
+    if (
+      looksLikePdfResource(tab.url, normalizedResult.pageTitle) &&
+      shouldPreferPdfExtraction(normalizedResult.fullText)
+    ) {
+      try {
+        const pdfCapture = await extractPdfTextFromUrl(tab.url, normalizedResult.pageTitle, {
+          maxPages: 10,
+          maxChars: FULL_TEXT_MAX_LEN,
+        });
+        if (pdfCapture?.fullText) {
+          normalizedResult.snippet =
+            normalizeText(pdfCapture.snippet, SNIPPET_MAX_LEN) || normalizedResult.snippet;
+          normalizedResult.fullText =
+            normalizeRichText(pdfCapture.fullText, FULL_TEXT_MAX_LEN) || normalizedResult.fullText;
+        }
+      } catch {
+        // Fall back to the DOM capture when PDF extraction is unavailable.
+      }
+    }
+
+    return normalizedResult;
   } catch {
     return null;
   }
@@ -763,10 +808,32 @@ async function processAndStore(tabData) {
   contextProfile.captureIntent = captureIntent;
   contextProfile.clutterAudit = clutterAudit;
   contextProfile.localJudge = localJudge;
+  contextProfile.selectiveMemory = evaluateSelectiveMemory(contextProfile, {
+    interactionType: active.typingActive
+      ? "type"
+      : active.scrollingActive
+        ? "scroll"
+        : "navigate",
+  });
   if (shouldSkipCaptureProfile(contextProfile)) {
     return null;
   }
-  const searchableText = buildSearchableText(tabData, contextProfile);
+  const retainedContent = applySelectiveRetention(
+    contextProfile,
+    {
+      snippet: storedContent.snippet,
+      fullText: contextProfile.fullText || storedContent.fullText,
+    },
+    contextProfile.selectiveMemory
+  );
+  const retainedProfile = {
+    ...contextProfile,
+    snippet: retainedContent.snippet,
+    fullText: retainedContent.fullText,
+    displayExcerpt: retainedContent.snippet || contextProfile.displayExcerpt,
+    displayFullText: retainedContent.fullText || contextProfile.displayFullText,
+  };
+  const searchableText = buildSearchableText(tabData, retainedProfile);
   const embedding = await embedText(`${searchableText} ${keyphrases.join(" ")}`.trim());
   const persistedContextProfile = {
     version: contextProfile.version,
@@ -785,12 +852,15 @@ async function processAndStore(tabData) {
     subject: contextProfile.subject,
     factItems: contextProfile.factItems,
     structuredSummary: contextProfile.structuredSummary,
-    displayExcerpt: contextProfile.displayExcerpt,
-    displayFullText: contextProfile.displayFullText,
+    displayExcerpt: retainedProfile.displayExcerpt,
+    fullText: retainedProfile.fullText,
+    displayFullText: retainedProfile.displayFullText,
+    derivativeItems: contextProfile.derivativeItems,
     contextText: contextProfile.contextText,
     captureIntent: contextProfile.captureIntent,
     clutterAudit: contextProfile.clutterAudit,
     localJudge: contextProfile.localJudge,
+    selectiveMemory: contextProfile.selectiveMemory,
   };
 
   const event = {
@@ -803,16 +873,21 @@ async function processAndStore(tabData) {
       : active.scrollingActive
         ? "scroll"
         : "navigate",
-    content_text: storedContent.snippet,
-    full_text: contextProfile.fullText || storedContent.fullText,
+    content_text: retainedContent.snippet,
+    full_text: retainedContent.fullText,
     keyphrases_json: JSON.stringify(keyphrases),
     searchable_text: searchableText,
     embedding_json: JSON.stringify(embedding),
     context_profile_json: JSON.stringify(persistedContextProfile),
+    selective_memory_json: JSON.stringify(contextProfile.selectiveMemory || null),
     source: "extension"
   };
 
-  return appendEvent(event);
+  const appendResult = await appendEvent(event);
+  if (!appendResult?.skipped) {
+    invalidateEventSearchIndex();
+  }
+  return appendResult;
 }
 
 async function snapshotFocusedWindow() {
@@ -908,7 +983,7 @@ function parseKeyphrases(event) {
 }
 
 function parseContextProfile(event) {
-  return extractContextProfile({
+  const profile = extractContextProfile({
     url: event.url,
     application: event.application,
     pageTitle: event.window_title,
@@ -916,7 +991,14 @@ function parseContextProfile(event) {
     fullText: event.full_text,
     keyphrases: parseKeyphrases(event),
     context_profile_json: event.context_profile_json,
+    selective_memory_json: event.selective_memory_json,
   });
+  if (!profile.selectiveMemory) {
+    profile.selectiveMemory = evaluateSelectiveMemory(profile, {
+      interactionType: event.interaction_type,
+    });
+  }
+  return profile;
 }
 
 function suggestionTimeLabel(occurredAt) {
@@ -1085,9 +1167,12 @@ async function handleSuggestions(query, timeFilter, limit = 6) {
       matchesTimeFilter(event, timeFilter) &&
       !shouldIgnoreCapturedPage(event.url, event.window_title)
   );
+  const indexedEvents = normalizeText(query, 240)
+    ? getIndexedSearchCandidates(filteredEvents, query, Math.max(limit * 80, 240))
+    : filteredEvents;
   const candidates = new Map();
 
-  for (const event of filteredEvents) {
+  for (const event of indexedEvents) {
     const profile = parseContextProfile(event);
     if (shouldSkipCaptureProfile(profile)) {
       continue;
@@ -1099,6 +1184,9 @@ async function handleSuggestions(query, timeFilter, limit = 6) {
       continue;
     }
     if (profile.clutterAudit?.clutterScore >= 0.82) {
+      continue;
+    }
+    if (profile.selectiveMemory?.shouldUseForSuggestions === false) {
       continue;
     }
 
@@ -1194,13 +1282,31 @@ async function handleSearch(query, limit = 20) {
     return { results: [], answer: null };
   }
   const recentEvents = await getRecentEvents(3000);
-  return answerLocalQuery({
+  const candidateEvents = getIndexedSearchCandidates(
+    recentEvents,
+    normalizedQuery,
+    Math.max(limit * 40, 320)
+  );
+  const primaryResponse = await answerLocalQuery({
     query: normalizedQuery,
     limit,
-    rawEvents: recentEvents,
+    rawEvents: candidateEvents,
     embedText,
     cosineSimilarity
   });
+  if (
+    (!primaryResponse?.results || !primaryResponse.results.length) &&
+    candidateEvents.length < recentEvents.length
+  ) {
+    return answerLocalQuery({
+      query: normalizedQuery,
+      limit,
+      rawEvents: recentEvents,
+      embedText,
+      cosineSimilarity
+    });
+  }
+  return primaryResponse;
 }
 
 chrome.runtime.onInstalled.addListener(() => {
@@ -1314,7 +1420,10 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
   if (message.type === "clearAllData") {
     clearAllData()
-      .then(() => sendResponse({ ok: true }))
+      .then(() => {
+        invalidateEventSearchIndex();
+        sendResponse({ ok: true });
+      })
       .catch((error) =>
         sendResponse({
           ok: false,

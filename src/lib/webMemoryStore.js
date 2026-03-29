@@ -1,4 +1,8 @@
-const WEB_MEMORY_KEY = 'memact.web-memories'
+import Dexie from 'dexie'
+import { Index as FlexSearchIndex } from 'flexsearch'
+
+const LEGACY_WEB_MEMORY_KEY = 'memact.web-memories'
+const WEB_DB_NAME = 'memact-web-memory'
 const MAX_WEB_MEMORIES = 180
 const STOPWORDS = new Set([
   'a',
@@ -34,6 +38,14 @@ const STOPWORDS = new Set([
   'you',
 ])
 
+const webDb = new Dexie(WEB_DB_NAME)
+webDb.version(1).stores({
+  memories: 'id, &fingerprint, occurred_at, domain, month_key, title, page_type, application',
+})
+
+let initPromise = null
+let statePromise = null
+
 function normalize(value) {
   return String(value || '')
     .replace(/\s+/g, ' ')
@@ -65,10 +77,6 @@ function titleCase(value) {
 function safeDate(value) {
   const timestamp = Date.parse(value || '')
   return Number.isFinite(timestamp) ? new Date(timestamp) : new Date()
-}
-
-function safeIso(value) {
-  return safeDate(value).toISOString()
 }
 
 function memoryDomain(url) {
@@ -109,6 +117,45 @@ function compactText(value, maxLength = 260) {
   return `${text.slice(0, maxLength - 3).trim()}...`
 }
 
+function hashSeed(value) {
+  const text = String(value || '')
+  let hash = 0
+  for (let index = 0; index < text.length; index += 1) {
+    hash = (hash * 31 + text.charCodeAt(index)) | 0
+  }
+  return Math.abs(hash)
+}
+
+function chooseVariant(seed, variants) {
+  if (!Array.isArray(variants) || !variants.length) return ''
+  return variants[hashSeed(seed) % variants.length]
+}
+
+function ensureSentence(value) {
+  const text = normalize(value)
+  if (!text) return ''
+  return /[.!?]$/.test(text) ? text : `${text}.`
+}
+
+function joinNarrative(parts, maxLength = 320) {
+  return compactText(
+    parts
+      .map((part) => ensureSentence(part))
+      .filter(Boolean)
+      .join(' '),
+    maxLength
+  )
+}
+
+function quoteLabel(value) {
+  const text = normalize(value).replace(/^["']|["']$/g, '')
+  return text ? `"${text}"` : '"this memory"'
+}
+
+function pluralize(count, singular, plural = `${singular}s`) {
+  return `${count} ${count === 1 ? singular : plural}`
+}
+
 function tokenize(value) {
   return Array.from(
     new Set(
@@ -131,10 +178,10 @@ function memoryFingerprint(memory) {
     .join('|')
 }
 
-function readMemories() {
+function readLegacyMemories() {
   if (typeof window === 'undefined') return []
   try {
-    const raw = window.localStorage.getItem(WEB_MEMORY_KEY)
+    const raw = window.localStorage.getItem(LEGACY_WEB_MEMORY_KEY)
     const parsed = raw ? JSON.parse(raw) : []
     return Array.isArray(parsed) ? parsed : []
   } catch {
@@ -142,12 +189,12 @@ function readMemories() {
   }
 }
 
-function writeMemories(memories) {
+function clearLegacyMemories() {
   if (typeof window === 'undefined') return
   try {
-    window.localStorage.setItem(WEB_MEMORY_KEY, JSON.stringify(memories.slice(0, MAX_WEB_MEMORIES)))
+    window.localStorage.removeItem(LEGACY_WEB_MEMORY_KEY)
   } catch {
-    // Ignore storage failures in the fallback store.
+    // Ignore legacy cleanup failures.
   }
 }
 
@@ -155,7 +202,9 @@ function readSharePayload(searchParams) {
   const payload = {
     url: normalize(searchParams.get('url') || searchParams.get('target_url')),
     title: normalize(searchParams.get('title')),
-    text: normalizeRichText(searchParams.get('text') || searchParams.get('body') || searchParams.get('description')),
+    text: normalizeRichText(
+      searchParams.get('text') || searchParams.get('body') || searchParams.get('description')
+    ),
   }
 
   if (!payload.url && !payload.title && !payload.text) {
@@ -194,7 +243,7 @@ function buildMemoryFromShare(payload, environment) {
   const occurredAt = new Date().toISOString()
   const browserName = environment?.name || (environment?.mobile ? 'Phone browser' : 'Browser')
 
-  return {
+  return normalizeMemoryRecord({
     id: `web-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
     url,
     display_url: displayUrl(url),
@@ -221,32 +270,245 @@ function buildMemoryFromShare(payload, environment) {
     context_entities: [],
     context_topics: tokenize(title).slice(0, 4),
     search_results: [],
+    derivative_items: fullText
+      .split(/\n{2,}/)
+      .map((entry, index) => ({
+        kind: 'passage',
+        label: `Passage ${index + 1}`,
+        text: compactText(entry, 220),
+      }))
+      .filter((entry) => entry.text),
     source: 'web',
     duplicate_count: 1,
+  })
+}
+
+function normalizeMemoryRecord(memory) {
+  const occurredAt = memory?.occurred_at || new Date().toISOString()
+  const title = normalize(memory?.title || memory?.window_title || 'Local memory')
+  const url = normalize(memory?.url)
+  const fullText = normalizeRichText(memory?.full_text || memory?.raw_full_text || memory?.content_text)
+  const structuredSummary = normalize(memory?.structured_summary || memory?.content_text)
+  const snippet = normalize(memory?.content_text || memory?.display_excerpt || structuredSummary || fullText)
+  const domain = normalize(memory?.domain || memoryDomain(url))
+  const derivativeItems = Array.isArray(memory?.derivative_items)
+    ? memory.derivative_items
+        .map((entry) => ({
+          kind: normalize(entry?.kind),
+          label: normalize(entry?.label),
+          text: normalizeRichText(entry?.text),
+        }))
+        .filter((entry) => entry.text)
+    : []
+
+  return {
+    ...memory,
+    id: normalize(memory?.id) || `web-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
+    fingerprint: normalize(memory?.fingerprint) || memoryFingerprint(memory),
+    occurred_at: occurredAt,
+    month_key: monthKey(occurredAt),
+    url,
+    display_url: normalize(memory?.display_url || displayUrl(url)),
+    domain,
+    title,
+    window_title: title,
+    content_text: snippet,
+    full_text: fullText,
+    raw_full_text: normalizeRichText(memory?.raw_full_text || fullText),
+    structured_summary: structuredSummary || compactText(fullText, 280),
+    display_excerpt: normalize(memory?.display_excerpt || compactText(snippet || fullText, 280)),
+    page_type: normalize(memory?.page_type || 'shared'),
+    page_type_label: normalize(memory?.page_type_label || 'Shared page'),
+    context_subject: normalize(memory?.context_subject || title),
+    context_entities: Array.isArray(memory?.context_entities) ? memory.context_entities : [],
+    context_topics: Array.isArray(memory?.context_topics) ? memory.context_topics : tokenize(title).slice(0, 4),
+    fact_items: Array.isArray(memory?.fact_items) ? memory.fact_items : [],
+    search_results: Array.isArray(memory?.search_results) ? memory.search_results : [],
+    derivative_items: derivativeItems,
+    source: normalize(memory?.source || 'web'),
+    duplicate_count: Math.max(1, Number(memory?.duplicate_count || 1)),
+    search_blob: normalize(
+      [
+        title,
+        url,
+        domain,
+        structuredSummary,
+        snippet,
+        fullText,
+        normalize(memory?.context_subject),
+        ...(Array.isArray(memory?.context_topics) ? memory.context_topics : []),
+        ...(Array.isArray(memory?.context_entities) ? memory.context_entities : []),
+        ...derivativeItems.map((entry) => `${entry.label} ${entry.text}`),
+      ]
+        .filter(Boolean)
+        .join(' ')
+    ),
   }
 }
 
-function upsertMemory(memories, memory) {
-  const next = [...memories]
-  const fingerprint = memoryFingerprint(memory)
-  const existingIndex = next.findIndex((entry) => memoryFingerprint(entry) === fingerprint)
-
-  if (existingIndex >= 0) {
-    const existing = next[existingIndex]
-    next[existingIndex] = {
-      ...existing,
-      ...memory,
-      id: existing.id || memory.id,
-      duplicate_count: Math.max(1, Number(existing.duplicate_count || 1) + 1),
-      occurred_at: memory.occurred_at,
-    }
-  } else {
-    next.unshift(memory)
+async function ensureInitialized() {
+  if (!initPromise) {
+    initPromise = (async () => {
+      await webDb.open()
+      const legacyMemories = Array.from(
+        new Map(
+          readLegacyMemories()
+            .map(normalizeMemoryRecord)
+            .slice(0, MAX_WEB_MEMORIES)
+            .map((memory) => [memory.fingerprint, memory])
+        ).values()
+      )
+      if (legacyMemories.length) {
+        const existingCount = await webDb.memories.count()
+        if (!existingCount) {
+          await webDb.memories.bulkPut(legacyMemories)
+        }
+        clearLegacyMemories()
+      }
+    })()
   }
 
-  return next
-    .sort((left, right) => Date.parse(right.occurred_at || '') - Date.parse(left.occurred_at || ''))
-    .slice(0, MAX_WEB_MEMORIES)
+  await initPromise
+}
+
+function createSearchIndex() {
+  return new FlexSearchIndex({
+    charset: 'latin:advanced',
+    tokenize: 'forward',
+    resolution: 9,
+    cache: 128,
+  })
+}
+
+function createSuggestionSeed(memories) {
+  const latest = new Map()
+  const counts = new Map()
+
+  const addSuggestion = (key, suggestion) => {
+    counts.set(key, (counts.get(key) || 0) + 1)
+    const current = latest.get(key)
+    const nextTime = Date.parse(suggestion.timestamp || '') || 0
+    if (!current || nextTime > (Date.parse(current.timestamp || '') || 0)) {
+      latest.set(key, suggestion)
+    }
+  }
+
+  memories.forEach((memory) => {
+    if (memory.domain) {
+      addSuggestion(`domain:${memory.domain}`, {
+        id: `domain:${memory.domain}`,
+        category: 'Saved site',
+        title: `Show activity from ${memory.domain}`,
+        subtitle: `${memory.domain} saved locally on this device.`,
+        completion: `Show activity from ${memory.domain}`,
+        timestamp: memory.occurred_at,
+      })
+    }
+
+    if (memory.title) {
+      addSuggestion(`title:${memory.title}`, {
+        id: `title:${memory.title}`,
+        category: 'Saved page',
+        title: `What did I save about "${compactText(memory.title, 46)}"?`,
+        subtitle:
+          compactText(memory.structured_summary || memory.content_text, 72) ||
+          'Saved locally on this device.',
+        completion: `What did I save about "${memory.title}"?`,
+        timestamp: memory.occurred_at,
+      })
+    }
+
+    addSuggestion(`month:${memory.month_key}`, {
+      id: `month:${memory.month_key}`,
+      category: 'Saved month',
+      title: `Show memories from ${formatMonthLabel(memory.month_key)}`,
+      subtitle: `Memories saved in ${formatMonthLabel(memory.month_key)}.`,
+      completion: `Show memories from ${formatMonthLabel(memory.month_key)}`,
+      timestamp: memory.occurred_at,
+    })
+  })
+
+  return [...latest.entries()]
+    .map(([key, suggestion]) => ({
+      ...suggestion,
+      key,
+      weight: counts.get(key) || 1,
+      search_blob: normalize(
+        [suggestion.title, suggestion.subtitle, suggestion.completion, suggestion.category].join(' ')
+      ),
+    }))
+    .sort((left, right) => {
+      if (right.weight !== left.weight) return right.weight - left.weight
+      return (Date.parse(right.timestamp || '') || 0) - (Date.parse(left.timestamp || '') || 0)
+    })
+}
+
+async function buildState() {
+  await ensureInitialized()
+  const memories = (await webDb.memories.orderBy('occurred_at').reverse().limit(MAX_WEB_MEMORIES).toArray()).map(
+    normalizeMemoryRecord
+  )
+
+  const searchIndex = createSearchIndex()
+  const byId = new Map()
+  for (const memory of memories) {
+    byId.set(String(memory.id), memory)
+    if (memory.search_blob) {
+      searchIndex.add(String(memory.id), memory.search_blob)
+    }
+  }
+
+  const suggestions = createSuggestionSeed(memories)
+  const suggestionIndex = createSearchIndex()
+  const suggestionsById = new Map()
+  for (const suggestion of suggestions) {
+    suggestionsById.set(String(suggestion.id), suggestion)
+    if (suggestion.search_blob) {
+      suggestionIndex.add(String(suggestion.id), suggestion.search_blob)
+    }
+  }
+
+  return {
+    memories,
+    searchIndex,
+    byId,
+    suggestions,
+    suggestionIndex,
+    suggestionsById,
+  }
+}
+
+async function getState() {
+  if (!statePromise) {
+    statePromise = buildState()
+  }
+  return statePromise
+}
+
+function invalidateState() {
+  statePromise = null
+}
+
+async function upsertMemory(memory) {
+  await ensureInitialized()
+  const normalizedMemory = normalizeMemoryRecord(memory)
+  const existing = await webDb.memories.where('fingerprint').equals(normalizedMemory.fingerprint).first()
+
+  if (existing) {
+    await webDb.memories.put(
+      normalizeMemoryRecord({
+        ...existing,
+        ...normalizedMemory,
+        id: existing.id || normalizedMemory.id,
+        duplicate_count: Math.max(1, Number(existing.duplicate_count || 1) + 1),
+        occurred_at: normalizedMemory.occurred_at,
+      })
+    )
+  } else {
+    await webDb.memories.put(normalizedMemory)
+  }
+
+  invalidateState()
 }
 
 function inTimeFilter(memory, timeFilter) {
@@ -316,6 +578,9 @@ function scoreMemory(memory, parsedQuery) {
   const url = normalize(memory.url).toLowerCase()
   const snippet = normalize(memory.content_text).toLowerCase()
   const fullText = normalize(memory.full_text).toLowerCase()
+  const derivatives = Array.isArray(memory.derivative_items)
+    ? memory.derivative_items.map((item) => normalize(item.text).toLowerCase()).join(' ')
+    : ''
   const tokens = tokenize(value)
 
   if (parsedQuery.type === 'domain') {
@@ -337,12 +602,14 @@ function scoreMemory(memory, parsedQuery) {
   if (url.includes(loweredValue)) score += 0.3
   if (snippet.includes(loweredValue)) score += 0.26
   if (fullText.includes(loweredValue)) score += 0.18
+  if (derivatives.includes(loweredValue)) score += 0.2
 
   if (tokens.length) {
     const titleHits = tokens.filter((token) => title.includes(token)).length / tokens.length
     const snippetHits = tokens.filter((token) => snippet.includes(token)).length / tokens.length
     const fullHits = tokens.filter((token) => fullText.includes(token)).length / tokens.length
-    score += titleHits * 0.45 + snippetHits * 0.22 + fullHits * 0.16
+    const derivativeHits = tokens.filter((token) => derivatives.includes(token)).length / tokens.length
+    score += titleHits * 0.45 + snippetHits * 0.22 + fullHits * 0.16 + derivativeHits * 0.18
   }
 
   score += recencyScore(memory.occurred_at) * 0.18
@@ -353,12 +620,22 @@ function buildAnswer(query, results, modeLabel) {
   const label = query || 'local memories'
   if (!results.length) {
     return {
-      overview: `No local matches for "${label}"`,
+      overview: chooseVariant(`web-empty-overview:${label}`, [
+        `No strong local match for ${quoteLabel(label)}`,
+        `Nothing clear yet for ${quoteLabel(label)}`,
+        `No saved match for ${quoteLabel(label)}`,
+      ]),
       answer: '',
-      summary:
+      summary: joinNarrative([
         modeLabel === 'phone'
-          ? 'No saved phone memories matched this search yet.'
-          : 'No saved web memories matched this search yet.',
+          ? `No saved phone memories matched ${quoteLabel(label)} yet`
+          : `No saved web memories matched ${quoteLabel(label)} yet`,
+        chooseVariant(`web-empty-tip:${label}`, [
+          'Try adding a site, page title, or time clue',
+          'A more specific phrase usually works better',
+          'Searching with one concrete detail helps narrow it down',
+        ]),
+      ]),
       detailItems: [{ label: 'Matches', value: '0' }],
       signals: [],
       sessionSummary: '',
@@ -368,11 +645,29 @@ function buildAnswer(query, results, modeLabel) {
     }
   }
 
+  const primary = results[0]
+  const location = [primary?.application, primary?.domain].filter(Boolean).join(' on ')
+
   return {
-    overview: `${results.length} local matches for "${label}"`,
+    overview: chooseVariant(`web-overview:${label}`, [
+      `Best local match for ${quoteLabel(label)}`,
+      `Strongest saved result for ${quoteLabel(label)}`,
+      `What Memact found for ${quoteLabel(label)}`,
+    ]),
     answer: results[0].title || label,
-    summary:
-      'Sorted by exact title, URL, and text match first, then by recency. Click any card to open the full saved memory.',
+    summary: joinNarrative([
+      chooseVariant(`web-lead:${label}:${primary?.title}`, [
+        `${quoteLabel(primary?.title || label)} is the strongest saved match${location ? ` in ${location}` : ''}`,
+        `The clearest saved match points to ${quoteLabel(primary?.title || label)}${location ? ` in ${location}` : ''}`,
+        `${quoteLabel(primary?.title || label)} stands out as the best local result${location ? ` in ${location}` : ''}`,
+      ]),
+      primary?.structured_summary || primary?.content_text || '',
+      chooseVariant(`web-evidence:${label}:${results.length}`, [
+        `Memact found ${pluralize(results.length, 'matching memory')} for this search`,
+        `${pluralize(results.length, 'saved memory')} support this result`,
+        `This answer is backed by ${pluralize(results.length, 'matching capture')}`,
+      ]),
+    ]),
     detailItems: [
       { label: 'Mode', value: modeLabel === 'phone' ? 'Phone browser' : 'Web browser' },
       { label: 'Matches', value: String(results.length) },
@@ -385,17 +680,9 @@ function buildAnswer(query, results, modeLabel) {
   }
 }
 
-function suggestionMatch(candidate, query) {
-  const loweredQuery = normalize(query).toLowerCase()
-  if (!loweredQuery) return true
-  return (
-    candidate.title.toLowerCase().includes(loweredQuery) ||
-    candidate.subtitle.toLowerCase().includes(loweredQuery) ||
-    candidate.completion.toLowerCase().includes(loweredQuery)
-  )
-}
+export async function initializeWebMemoryStore(environment) {
+  await ensureInitialized()
 
-export function initializeWebMemoryStore(environment) {
   if (typeof window === 'undefined') {
     return { imported: false, memoryCount: 0 }
   }
@@ -405,23 +692,25 @@ export function initializeWebMemoryStore(environment) {
   const payload = readSharePayload(url.searchParams)
 
   if (!isShareRequest && !payload) {
-    return { imported: false, memoryCount: readMemories().length }
+    const count = await webDb.memories.count()
+    return { imported: false, memoryCount: count }
   }
 
   if (!payload) {
     stripShareParams()
-    return { imported: false, memoryCount: readMemories().length }
+    const count = await webDb.memories.count()
+    return { imported: false, memoryCount: count }
   }
 
-  const memory = buildMemoryFromShare(payload, environment)
-  const next = upsertMemory(readMemories(), memory)
-  writeMemories(next)
+  await upsertMemory(buildMemoryFromShare(payload, environment))
   stripShareParams()
-  return { imported: true, memoryCount: next.length }
+  const count = await webDb.memories.count()
+  return { imported: true, memoryCount: count }
 }
 
-export function webMemoryStatus(environment) {
-  const count = readMemories().length
+export async function webMemoryStatus(environment) {
+  await ensureInitialized()
+  const count = await webDb.memories.count()
   return {
     ready: true,
     transport: 'web-fallback',
@@ -430,85 +719,108 @@ export function webMemoryStatus(environment) {
   }
 }
 
-export function webMemoryStats() {
-  const memories = readMemories()
+export async function webMemoryStats() {
+  await ensureInitialized()
+  const count = await webDb.memories.count()
   return {
-    eventsCount: memories.length,
-    sessionsCount: memories.length,
+    eventCount: count,
+    sessionCount: count,
   }
 }
 
-export function webMemorySuggestions(query = '', timeFilter = null, limit = 12) {
-  const memories = readMemories().filter((memory) => inTimeFilter(memory, timeFilter))
-  const counts = new Map()
-  const latest = new Map()
+export async function webMemorySuggestions(query = '', timeFilter = null, limit = 12) {
+  const state = await getState()
+  const filteredSuggestions = state.suggestions.filter((suggestion) =>
+    inTimeFilter({ occurred_at: suggestion.timestamp }, timeFilter)
+  )
 
-  const addSuggestion = (key, suggestion) => {
-    counts.set(key, (counts.get(key) || 0) + 1)
-    const currentLatest = latest.get(key)
-    const nextTime = Date.parse(suggestion.timestamp || '') || 0
-    if (!currentLatest || nextTime > (Date.parse(currentLatest.timestamp || '') || 0)) {
-      latest.set(key, suggestion)
+  const normalizedQuery = normalize(query)
+  if (!normalizedQuery) {
+    return filteredSuggestions.slice(0, limit).map(({ key, weight, timestamp, search_blob, ...rest }) => rest)
+  }
+
+  const ids = state.suggestionIndex.search(normalizedQuery, Math.max(limit * 6, 24))
+  const ranked = []
+  const seen = new Set()
+
+  for (const id of ids || []) {
+    const suggestion = state.suggestionsById.get(String(id))
+    if (!suggestion || seen.has(String(id))) {
+      continue
+    }
+    if (!inTimeFilter({ occurred_at: suggestion.timestamp }, timeFilter)) {
+      continue
+    }
+    seen.add(String(id))
+    ranked.push(suggestion)
+  }
+
+  if (!ranked.length) {
+    for (const suggestion of filteredSuggestions) {
+      const haystack = normalize(
+        [suggestion.title, suggestion.subtitle, suggestion.completion, suggestion.category].join(' ')
+      ).toLowerCase()
+      if (
+        normalizedQuery
+          .toLowerCase()
+          .split(/\s+/)
+          .filter(Boolean)
+          .every((token) => haystack.includes(token))
+      ) {
+        ranked.push(suggestion)
+      }
+      if (ranked.length >= limit) {
+        break
+      }
     }
   }
 
-  memories.forEach((memory) => {
-    if (memory.domain) {
-      addSuggestion(`domain:${memory.domain}`, {
-        id: `domain:${memory.domain}`,
-        category: 'Saved site',
-        title: `Show activity from ${memory.domain}`,
-        subtitle: `${memory.domain} saved locally on this device.`,
-        completion: `Show activity from ${memory.domain}`,
-        timestamp: memory.occurred_at,
-      })
-    }
-
-    if (memory.title) {
-      addSuggestion(`title:${memory.title}`, {
-        id: `title:${memory.title}`,
-        category: 'Saved page',
-        title: `What did I save about "${compactText(memory.title, 46)}"?`,
-        subtitle: compactText(memory.structured_summary || memory.content_text, 72) || 'Saved locally on this device.',
-        completion: `What did I save about "${memory.title}"?`,
-        timestamp: memory.occurred_at,
-      })
-    }
-
-    addSuggestion(`month:${monthKey(memory.occurred_at)}`, {
-      id: `month:${monthKey(memory.occurred_at)}`,
-      category: 'Saved month',
-      title: `Show memories from ${formatMonthLabel(monthKey(memory.occurred_at))}`,
-      subtitle: `Memories saved in ${formatMonthLabel(monthKey(memory.occurred_at))}.`,
-      completion: `Show memories from ${formatMonthLabel(monthKey(memory.occurred_at))}`,
-      timestamp: memory.occurred_at,
-    })
-  })
-
-  return [...latest.entries()]
-    .map(([key, suggestion]) => ({
-      ...suggestion,
-      weight: counts.get(key) || 1,
-    }))
-    .filter((suggestion) => suggestionMatch(suggestion, query))
-    .sort((left, right) => {
-      if (right.weight !== left.weight) return right.weight - left.weight
-      return (Date.parse(right.timestamp || '') || 0) - (Date.parse(left.timestamp || '') || 0)
-    })
+  return ranked
     .slice(0, limit)
-    .map(({ weight, timestamp, ...rest }) => rest)
+    .map(({ key, weight, timestamp, search_blob, ...rest }) => rest)
 }
 
-export function webMemorySearch(query, limit = 20, environment) {
+export async function webMemorySearch(query, limit = 20, environment) {
+  const state = await getState()
   const parsedQuery = parseStructuredQuery(query)
   const modeLabel = environment?.mobile ? 'phone' : 'web'
-  const ranked = readMemories()
+  const normalizedQuery = normalize(parsedQuery.value)
+
+  let candidateMemories = state.memories
+  if (parsedQuery.type === 'match' || parsedQuery.type === 'topic') {
+    const ids = normalizedQuery
+      ? state.searchIndex.search(normalizedQuery, Math.max(limit * 24, 80))
+      : []
+    if (Array.isArray(ids) && ids.length) {
+      candidateMemories = ids
+        .map((id) => state.byId.get(String(id)))
+        .filter(Boolean)
+      if (candidateMemories.length < Math.min(limit * 3, 40)) {
+        const seen = new Set(candidateMemories.map((memory) => String(memory.id)))
+        for (const memory of state.memories) {
+          if (seen.has(String(memory.id))) {
+            continue
+          }
+          candidateMemories.push(memory)
+          if (candidateMemories.length >= Math.max(limit * 4, 60)) {
+            break
+          }
+        }
+      }
+    }
+  }
+
+  const ranked = candidateMemories
     .map((memory) => ({
       ...memory,
       score: scoreMemory(memory, parsedQuery),
     }))
     .filter((memory) => memory.score >= 0.16)
-    .sort((left, right) => right.score - left.score || Date.parse(right.occurred_at || '') - Date.parse(left.occurred_at || ''))
+    .sort(
+      (left, right) =>
+        right.score - left.score ||
+        Date.parse(right.occurred_at || '') - Date.parse(left.occurred_at || '')
+    )
     .slice(0, limit)
 
   return {
@@ -517,12 +829,12 @@ export function webMemorySearch(query, limit = 20, environment) {
   }
 }
 
-export function clearWebMemories() {
-  if (typeof window === 'undefined') {
-    return { ok: true }
-  }
+export async function clearWebMemories() {
+  await ensureInitialized()
   try {
-    window.localStorage.removeItem(WEB_MEMORY_KEY)
+    await webDb.memories.clear()
+    invalidateState()
+    clearLegacyMemories()
     return { ok: true }
   } catch (error) {
     return { ok: false, error: String(error?.message || error || 'Could not clear local memories.') }

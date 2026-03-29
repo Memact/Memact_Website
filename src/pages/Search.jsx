@@ -18,6 +18,21 @@ function normalize(value) {
     .trim()
 }
 
+function normalizeRichText(value) {
+  const text = String(value || '').replace(/\r\n/g, '\n').replace(/\r/g, '\n')
+  const blocks = text
+    .split(/\n{2,}/)
+    .map((block) =>
+      block
+        .split(/\n+/)
+        .map((line) => line.replace(/[ \t]+/g, ' ').trim())
+        .filter(Boolean)
+        .join('\n')
+    )
+    .filter(Boolean)
+  return blocks.join('\n\n').trim()
+}
+
 function getExperimentNoticeDismissed() {
   if (typeof window === 'undefined') {
     return false
@@ -76,6 +91,189 @@ function openExternal(url) {
   window.open(url, '_blank', 'noreferrer')
 }
 
+const STRUCTURED_POINT_IGNORE = [
+  /^summary$/i,
+  /^saved snippet$/i,
+  /^full extracted text$/i,
+  /^captured page view$/i,
+  /^captured results$/i,
+  /^raw captured text$/i,
+  /^show raw captured text$/i,
+]
+
+function cleanStructuredPoint(value) {
+  return normalize(value)
+    .replace(/^[\u2022*-]\s*/, '')
+    .replace(/^\(?([ivxlcdm]+|\d+)\)?[.)-]?\s+/i, '')
+    .replace(/\s*[-–—]\s*/g, ' - ')
+}
+
+function splitCandidateSentences(value) {
+  const normalized = normalizeRichText(value)
+  if (!normalized) {
+    return []
+  }
+
+  return normalized
+    .replace(/\u2022/g, '\n')
+    .split(/\n+/)
+    .flatMap((line) => line.split(/(?<=[.!?])\s+(?=[A-Z0-9(])/))
+    .map(cleanStructuredPoint)
+    .filter(Boolean)
+}
+
+function usefulStructuredPoint(value, result, seen) {
+  const cleaned = cleanStructuredPoint(value)
+  if (!cleaned) {
+    return ''
+  }
+
+  if (cleaned.length < 18 || cleaned.length > 220) {
+    return ''
+  }
+
+  if (/^https?:\/\//i.test(cleaned)) {
+    return ''
+  }
+
+  if (STRUCTURED_POINT_IGNORE.some((pattern) => pattern.test(cleaned))) {
+    return ''
+  }
+
+  if (cleaned.toLowerCase() === normalize(result?.title).toLowerCase()) {
+    return ''
+  }
+
+  const key = cleaned.toLowerCase()
+  if (seen.has(key)) {
+    return ''
+  }
+
+  seen.add(key)
+  return cleaned
+}
+
+function deriveKeyPoints(result) {
+  const seen = new Set()
+  const points = []
+  const derivativeItems = Array.isArray(result?.derivativeItems) ? result.derivativeItems : []
+  const addPoint = (value, label = '') => {
+    const point = usefulStructuredPoint(
+      label && !/^passage\s+\d+$/i.test(label) ? `${label}: ${value}` : value,
+      result,
+      seen
+    )
+    if (point) {
+      points.push(point)
+    }
+  }
+
+  for (const entry of derivativeItems.slice(0, 4)) {
+    addPoint(entry.text, entry.label)
+    if (points.length >= 5) {
+      return points
+    }
+  }
+
+  const prioritized = splitCandidateSentences(
+    [result?.structuredSummary, result?.snippet, result?.fullText].filter(Boolean).join('\n\n')
+  ).filter(
+    (line) =>
+      /:/.test(line) ||
+      /^(step|key|important|definition|formula|theorem|result|uses|offers|supports)\b/i.test(line)
+  )
+
+  for (const line of prioritized) {
+    addPoint(line)
+    if (points.length >= 5) {
+      return points
+    }
+  }
+
+  const fallbackLines = splitCandidateSentences(
+    [result?.structuredSummary, result?.displayExcerpt, result?.snippet, result?.fullText]
+      .filter(Boolean)
+      .join('\n\n')
+  )
+  for (const line of fallbackLines) {
+    addPoint(line)
+    if (points.length >= 5) {
+      break
+    }
+  }
+
+  return points
+}
+
+function buildMemoryCopyText({
+  result,
+  sessionLabel,
+  displayUrl,
+  detailItems,
+  factItems,
+  keyPoints,
+  derivativeItems,
+  searchResults,
+  fullText,
+  primaryTextHeading,
+}) {
+  const lines = [result?.title || 'Memory']
+
+  if (sessionLabel) {
+    lines.push(`Session: ${sessionLabel}`)
+  }
+
+  if (displayUrl) {
+    lines.push(`URL: ${displayUrl}`)
+  }
+
+  for (const item of detailItems || []) {
+    lines.push(`${item.label}: ${item.value}`)
+  }
+
+  if (result?.structuredSummary) {
+    lines.push('', 'Summary', result.structuredSummary)
+  }
+
+  if (keyPoints?.length) {
+    lines.push('', 'Key points')
+    keyPoints.forEach((point, index) => {
+      lines.push(`${index + 1}. ${point}`)
+    })
+  }
+
+  if (factItems?.length) {
+    lines.push('', 'Facts')
+    factItems.forEach((item) => {
+      lines.push(`- ${item.label}: ${item.value}`)
+    })
+  }
+
+  if (derivativeItems?.length) {
+    lines.push('', 'Matched passages')
+    derivativeItems.forEach((item, index) => {
+      const prefix =
+        item?.label && !/^passage\s+\d+$/i.test(item.label)
+          ? `${item.label}: `
+          : `${index + 1}. `
+      lines.push(`${prefix}${item.text}`)
+    })
+  }
+
+  if (searchResults?.length) {
+    lines.push('', 'Captured results')
+    searchResults.forEach((item, index) => {
+      lines.push(`${index + 1}. ${item}`)
+    })
+  }
+
+  if (fullText) {
+    lines.push('', primaryTextHeading, fullText)
+  }
+
+  return lines.filter(Boolean).join('\n')
+}
+
 function downloadExtensionPackage() {
   if (typeof document === 'undefined') {
     return
@@ -104,7 +302,7 @@ async function copyTextValue(value) {
   }
 }
 
-function GlassDialog({ title, subtitle, children, footer, onClose }) {
+function GlassDialog({ title, subtitle, children, footer, onClose, headerActions = null }) {
   const panelRef = useRef(null)
 
   useEffect(() => {
@@ -156,8 +354,13 @@ function GlassDialog({ title, subtitle, children, footer, onClose }) {
       >
         <div ref={panelRef} className="dialog-panel" tabIndex={-1}>
           <div className="dialog-copy">
-            <h2 className="dialog-title">{title}</h2>
-            {subtitle ? <p className="dialog-body">{subtitle}</p> : null}
+            <div className="dialog-copy-row">
+              <div className="dialog-copy-stack">
+                <h2 className="dialog-title">{title}</h2>
+                {subtitle ? <p className="dialog-body">{subtitle}</p> : null}
+              </div>
+              {headerActions ? <div className="dialog-toolbar">{headerActions}</div> : null}
+            </div>
           </div>
           {children}
           {footer ? <div className="dialog-footer">{footer}</div> : null}
@@ -500,9 +703,11 @@ function BrowserSetupDialog({ browserInfo, mode, extensionDetected, extensionRea
 
 function MemoryDetailDialog({ result, onOpen, onClose }) {
   const [rawVisible, setRawVisible] = useState(false)
+  const [copiedState, setCopiedState] = useState('')
 
   useEffect(() => {
     setRawVisible(false)
+    setCopiedState('')
   }, [result?.id])
 
   if (!result) {
@@ -517,6 +722,7 @@ function MemoryDetailDialog({ result, onOpen, onClose }) {
     result.duplicateCount > 1 ? { label: 'Similar captures', value: `${result.duplicateCount}` } : null,
   ].filter(Boolean)
   const factItems = Array.isArray(result.factItems) ? result.factItems : []
+  const derivativeItems = Array.isArray(result.derivativeItems) ? result.derivativeItems : []
   const extractedContext = [
     result.contextSubject ? { label: 'Subject', value: result.contextSubject } : null,
     result.contextEntities.length ? { label: 'Entities', values: result.contextEntities } : null,
@@ -538,12 +744,56 @@ function MemoryDetailDialog({ result, onOpen, onClose }) {
   const connectedEvents = Array.isArray(result.connectedEvents) ? result.connectedEvents : []
   const primaryTextHeading = result.pageType === 'search' ? 'CAPTURED PAGE VIEW' : 'FULL EXTRACTED TEXT'
   const showRawCapturedText = rawFullText && rawFullText !== fullText
+  const keyPoints = useMemo(() => deriveKeyPoints(result), [result])
+  const copyPayload = useMemo(
+    () =>
+      buildMemoryCopyText({
+        result,
+        sessionLabel,
+        displayUrl,
+        detailItems,
+        factItems,
+        keyPoints,
+        derivativeItems,
+        searchResults,
+        fullText,
+        primaryTextHeading,
+      }),
+    [
+      derivativeItems,
+      detailItems,
+      displayUrl,
+      factItems,
+      fullText,
+      keyPoints,
+      primaryTextHeading,
+      result,
+      searchResults,
+      sessionLabel,
+    ]
+  )
+
+  const handleCopyMemory = async () => {
+    const ok = await copyTextValue(copyPayload)
+    if (!ok) {
+      return
+    }
+    setCopiedState('copied')
+    window.setTimeout(() => {
+      setCopiedState((current) => (current === 'copied' ? '' : current))
+    }, 1800)
+  }
 
   return (
     <GlassDialog
       title={result.title || 'Memory'}
       subtitle={sessionLabel ? `From session: ${sessionLabel}` : 'Full saved memory from this capture.'}
       onClose={onClose}
+      headerActions={
+        <button type="button" className="dialog-utility-button" onClick={handleCopyMemory}>
+          {copiedState === 'copied' ? 'Copied' : 'Copy'}
+        </button>
+      }
       footer={
         <>
           {result.url ? (
@@ -579,6 +829,22 @@ function MemoryDetailDialog({ result, onOpen, onClose }) {
         </div>
       ) : null}
 
+      {keyPoints.length ? (
+        <div className="memory-detail-body">
+          <div className="refine-heading">KEY POINTS</div>
+          <div className="structured-point-list">
+            {keyPoints.map((point, index) => (
+              <div key={`${index + 1}-${point}`} className="structured-point-item">
+                <span className="structured-point-index">{index + 1}.</span>
+                <div className="structured-point-copy">
+                  <MathRichText text={point} />
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
+
       {factItems.length ? (
         <div className="memory-detail-body">
           <div className="refine-heading">FACTS</div>
@@ -601,6 +867,25 @@ function MemoryDetailDialog({ result, onOpen, onClose }) {
                 value={item.value}
                 values={item.values}
               />
+            ))}
+          </div>
+        </div>
+      ) : null}
+
+      {derivativeItems.length ? (
+        <div className="memory-detail-body">
+          <div className="refine-heading">MATCHED PASSAGES</div>
+          <div className="structured-point-list">
+            {derivativeItems.map((entry, index) => (
+              <div key={`${entry.label}-${entry.text}-${index}`} className="structured-point-item">
+                <span className="structured-point-index">{index + 1}.</span>
+                <div className="structured-point-copy">
+                  {entry.label && !/^passage\s+\d+$/i.test(entry.label) ? (
+                    <div className="memory-passage-label">{entry.label}</div>
+                  ) : null}
+                  <MathRichText text={entry.text} />
+                </div>
+              </div>
             ))}
           </div>
         </div>
