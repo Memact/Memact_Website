@@ -1479,7 +1479,7 @@ export default function Search({ extension }) {
 
           <footer className={`status-text ${dockVisible ? 'is-hidden' : ''}`}>
             <span>{statusText}</span>
-            <span className="status-text__version">v1.1</span>
+            <span className="status-text__version">MVP v1.1</span>
           </footer>
 
           <div className={`loading-bar ${showLoadingBar ? 'is-visible' : ''}`}>
