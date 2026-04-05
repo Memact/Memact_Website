@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Memact",
-  "version": "1.1.0",
-  "version_name": "v1.1",
+  "version": "1.5.0",
+  "version_name": "v1.5",
   "description": "Local browser memory search.",
   "icons": {
     "16": "icons/memact_16.png",

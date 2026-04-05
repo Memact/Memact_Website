@@ -1,329 +1,162 @@
-# Memact MVP v1.1
+# Memact
 
-Memact is a local-first memory engine for browsing activity.
+Version: `MVP v1.5`
 
-The product has two parts:
+Memact is the product layer on top of Captanet and Influnet.
 
-- the website at `https://www.memact.com`
-- an optional Chromium extension that captures browsing activity locally and makes it searchable from the site
+It is the interface where users search their memory stream, inspect evidence, and eventually understand how digital exposure shaped their attention over time.
 
-Memact is intentionally experimental. The current goal is useful local recall, structured answers, and honest evidence before mass-market polish.
+## Product Stack
+
+- `Captanet`
+  The foundation memory engine. It captures browser activity, extracts context, filters noise, builds sessions and activities, and exports structured snapshots.
+- `Influnet`
+  The deterministic influence engine. It reads Captanet snapshots and surfaces repeated transitions, trajectories, source evidence, drift, and formation signals.
+- `Memact`
+  The product shell. It turns those underlying systems into a user-facing experience with search, evidence cards, setup flows, and local web fallback support.
+
+In short:
+
+- Captanet answers: `What happened?`
+- Influnet answers: `What tended to lead to what?`
+- Memact answers: `How does the user actually experience and inspect that memory?`
+
+## What This Repo Is
+
+This repository is the Memact website and interaction layer.
+
+It is intentionally separate from the new foundation repos:
+
+- Captanet repo: [https://github.com/Memact/Captanet](https://github.com/Memact/Captanet)
+- Influnet repo: [https://github.com/Memact/Influnet](https://github.com/Memact/Influnet)
+
+This repo still contains a website-facing extension bundle for local integration and packaging, but the architectural source of truth for the memory and influence layers now lives in those dedicated repositories.
 
 ## What Memact Does
 
-- Captures browser memories locally through the desktop extension
-- Lets the website search those memories with structured, evidence-backed results
-- Supports phone browsers in local web mode
-- Tries to skip junk, shell pages, and low-value captures
-- Builds relationships between events with an Episodic Graph
-- Applies selective memory so stronger memories are kept and weaker ones are compressed or demoted
-- Handles PDFs, math-heavy content, chemistry notation, and symbol-heavy text better than a plain snippet search UI
-- Shows key points, matched passages, facts, and optionally the full extracted memory
+- presents a local-first search interface over captured memory
+- shows evidence-backed result cards instead of opaque chatbot answers
+- supports local browser-extension integration on desktop
+- supports local web fallback behavior on unsupported/mobile environments
+- explains the Captanet -> Influnet story more clearly in the product shell
+- keeps the visible experience useful even when the lower layers stay deterministic and evidence-first
 
-## Current Product Shape
+## Current Experience
 
-### Website
+### Home Layer
 
-- React + Vite website
-- Hosted at `https://www.memact.com`
-- Works on desktop and phone browsers
-- Search-first UI with structured result cards
-- Memory detail dialog with:
-  - key points
-  - matched passages
-  - facts
-  - connected activity
-  - optional full extracted text
-  - optional raw captured text
-  - copy points action
+- explains the product as memory infrastructure for the internet
+- introduces Captanet, Influnet, and Memact as separate layers
+- frames the demo flow so a pitch audience can understand the stack quickly
 
-### Desktop Extension
+### Search Layer
 
-- Chromium-based extension for Edge, Chrome, Brave, Vivaldi, and similar browsers
-- Captures browsing activity locally
-- Uses local storage and local search indexes
-- Opens `https://www.memact.com` when the toolbar icon is clicked
-- Can be installed manually through the website setup flow
+- structured result cards
+- key points, matched passages, facts, and connected activity
+- result history and local suggestions
+- privacy and setup dialogs
 
-### Phone Mode
+### Setup Layer
 
-- Runs as a local web shell
-- Supports local search UI and local storage fallback
-- Does not do desktop-style automatic cross-browser capture
-- Exists so the product stays usable on phones while stronger mobile capture paths are still future work
+- browser-aware extension setup guidance
+- local-first messaging
+- extension-required vs web-fallback modes
 
-## Major Features
+## Relationship To Captanet And Influnet
 
-### Structured Answers
+Memact should consume the lower layers cleanly rather than re-owning their internals.
 
-Memact does not just dump raw snippets.
+Recommended direction:
 
-Search answers are built from structured memory data:
+1. Captanet captures and exports a snapshot.
+2. Influnet analyzes that snapshot into transitions, trajectories, and formation signals.
+3. Memact renders those outputs in a way users can inspect, search, and trust.
 
-- overview
-- direct answer
-- summary
-- facts
-- key points
-- matched passages
-- connected activity
+That dependency direction matters:
 
-The retrieval engine stays the source of truth. The language layer only reshapes already-found facts into cleaner answer cards.
+- Memact can depend on Captanet and Influnet
+- Captanet must not depend on Memact
+- Influnet should analyze Captanet outputs, not website internals
 
-### Selective Memory
+## Local Runbook
 
-Memact assigns a memory action and tier to captures so everything is not treated equally.
+Prerequisites:
 
-Possible actions:
+- Node.js `20+`
+- npm `10+`
 
-- `retain`
-- `compress`
-- `demote`
-- `skip`
-
-Possible tiers:
-
-- `core`
-- `supporting`
-- `background`
-- `fleeting`
-
-This helps Memact:
-
-- keep strong memories richer
-- reduce clutter from weak captures
-- avoid low-value memories polluting suggestions
-- weight search results by memory importance
-
-### Episodic Graph
-
-Memact connects events to other events with typed relationships and scores.
-
-Examples:
-
-- search result -> opened page
-- docs page -> follow-up action
-- reading -> coding
-- same topic
-- same entity
-- same session continuation
-
-Each relationship can carry:
-
-- a type
-- a score
-- a reason
-
-This helps answer:
-
-- what led to this?
-- what happened after this?
-- what else was connected to this?
-
-### PDF, Math, Chemistry, and Symbol Support
-
-Memact now handles technical content better than a plain browser-history search tool.
-
-Current support includes:
-
-- PDF extraction with `pdf.js`
-- KaTeX rendering
-- MathJax fallback
-- `mhchem` support for chemistry notation
-- better symbol font fallbacks for Greek, physics, and mathematical text
-
-This is especially useful for:
-
-- lecture notes
-- exam prep PDFs
-- formulas
-- chemistry equations
-- symbol-heavy docs
-
-### Faster Local Search
-
-Memact uses local indexing and caching so search feels more immediate.
-
-Current speed layers include:
-
-- Dexie-backed local storage
-- FlexSearch indexes for quick local lookup
-- cached result reuse
-- faster dynamic suggestions
-- structured result-history restore on back navigation
-
-## How Memact Works
-
-1. The extension captures a page locally.
-2. Memact extracts the page title, URL, snippet, full text, app, site, time, and session context.
-3. Capture intent decides whether the page should be stored fully, stored structurally, kept as metadata only, or skipped.
-4. Clutter audit scores the capture for noise, repetition, and low-value formatting.
-5. Context extraction builds a structured page profile:
-   - page type
-   - subject
-   - entities
-   - topics
-   - facts
-   - summary
-6. Selective memory assigns a tier, action, retention mode, and remember score.
-7. Sessions group nearby related activity.
-8. The Episodic Graph links strongly related events.
-9. Query parsing and ranking search those memories using exact signals first and broader semantic support second.
-10. The website renders a structured answer card plus direct supporting evidence.
-
-## Retrieval Model
-
-Memact is not a free-form chatbot.
-
-It uses a local retrieval pipeline that combines:
-
-- exact field matching
-- metadata filters
-- local embeddings
-- reranking
-- session support
-- selective memory weighting
-- episodic graph support
-- derivative passages for better evidence display
-
-The current system is designed to feel AI-like in presentation while staying deterministic in retrieval.
-
-## Local Model Layer
-
-Memact includes an optional lightweight local language layer for answer shaping.
-
-Current model path:
-
-- `@xenova/transformers`
-- `HuggingFaceTB/SmolLM2-135M-Instruct`
-
-This layer is used to:
-
-- structure visible answer fields more cleanly
-- polish wording for supported environments
-
-It is not used to:
-
-- decide the true match
-- invent facts
-- replace evidence
-
-## Tech Stack
-
-- React
-- Vite
-- Manifest V3 browser extension
-- IndexedDB
-- Dexie
-- FlexSearch
-- `@xenova/transformers`
-- SmolLM2 135M Instruct
-- `pdfjs-dist`
-- KaTeX
-- MathJax
-- `mhchem`
-
-## Important Local Modules
-
-- `extension/memact/background.js`
-  - capture orchestration, storage flow, and extension messaging
-- `extension/memact/context-pipeline.js`
-  - structured page understanding and cleaned memory text
-- `extension/memact/capture-intent.js`
-  - decides what kind of page this is and what should be kept
-- `extension/memact/clutter-audit.js`
-  - scores noisy captures and trims or skips them
-- `extension/memact/page-intelligence.js`
-  - local usefulness judgement
-- `extension/memact/selective-memory.js`
-  - memory tiering, retention, and remember scoring
-- `extension/memact/query-engine.js`
-  - retrieval, reranking, sessions, episodic graph, and answer shaping
-- `extension/memact/pdf-support.js`
-  - PDF extraction support
-- `extension/memact/search-index.js`
-  - local fast index support
-- `src/lib/webMemoryStore.js`
-  - website fallback memory store with Dexie and local indexing
-- `src/lib/localLanguageModel.js`
-  - optional local structured-answer polish
-- `src/components/MathRichText.jsx`
-  - math, chemistry, and symbol-friendly rendering
-
-## Privacy
-
-- Local-first by default
-- No cloud memory sync in the current product
-- No remote AI dependency for retrieval
-- No screenshot capture
-- No keystroke logging
-
-Memact may download local model files to the device for optional local answer structuring on supported browsers.
-
-## Running Locally
-
-Install dependencies:
+Install:
 
 ```powershell
 npm install
 ```
 
-Start the dev server:
+Run the local website:
 
 ```powershell
 npm run dev
 ```
 
-Build the website:
+Build the production website:
 
 ```powershell
 npm run build
 ```
 
-Package the extension zip:
+Package the website-facing extension bundle:
 
 ```powershell
 npm run package-extension
 ```
 
-## Loading The Extension Manually
-
-Use the website menu item `Install Browser Extension`.
-
-That setup flow explains the unpacked install path inside Memact itself.
-
-Manual flow:
+## Manual Extension Flow
 
 1. Open `edge://extensions`, `chrome://extensions`, `brave://extensions`, `opera://extensions`, or `vivaldi://extensions`
-2. Turn on Developer mode
+2. Enable Developer Mode
 3. Click `Load unpacked`
-4. Select the extracted folder that directly contains `manifest.json`
+4. Select the folder that directly contains `manifest.json`
 5. Reload the Memact website
 
-## Supported Hosts
+## Suggested Demo Flow
 
-The extension bridge currently supports:
+For a live demo:
 
-- `http://localhost`
-- `http://127.0.0.1`
-- `http://0.0.0.0`
-- `https://memact.com`
-- `https://www.memact.com`
+1. Run Captanet and let it collect real browsing activity.
+2. Export a Captanet snapshot into the shared workspace root.
+3. Run Influnet in the terminal to generate report, graph, and pitch artifacts.
+4. Use Memact to show the search and evidence layer that sits on top of that stack.
+
+That sequence makes the system feel real:
+
+- capture
+- structure
+- influence analysis
+- user-facing inspection
 
 ## Repo Layout
 
-- `src/` - website UI
-- `extension/memact/` - browser extension
-- `public/` - static website assets
-- `assets/` - fonts and visual assets
-- `memact_branding/` - logos and brand files
-- `scripts/` - packaging and setup helpers
+- `src/`
+  Website UI and interaction layer.
+- `extension/memact/`
+  Website-facing extension bundle used for local setup and packaging in this repo.
+- `public/`
+  Static website assets.
+- `assets/`
+  Fonts and visual assets.
+- `memact_branding/`
+  Logos and brand files.
+- `scripts/`
+  Packaging and local setup helpers.
 
 ## Status
 
-This is `MVP v1.1`.
+This repository is `MVP v1.5`.
 
-It is deployable and useful, but still experimental. Capture cleanliness, search precision, and memory organization are actively improving.
+It is product-facing, demoable, and locally runnable. The long-term system architecture now lives more cleanly across:
+
+- Memact for interface and product experience
+- Captanet for memory capture and structure
+- Influnet for deterministic influence analysis
 
 ## License
 

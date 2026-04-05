@@ -10,6 +10,36 @@ const TIME_FILTERS = [
   { label: 'This week', value: 'this week' },
   { label: 'Last week', value: 'last week' },
 ]
+const PRODUCT_LAYERS = [
+  {
+    eyebrow: 'Captanet',
+    title: 'Capture what actually happened',
+    description:
+      'Captanet records browser activity, extracts context, filters noise, groups sessions, and turns messy page visits into structured memory.',
+  },
+  {
+    eyebrow: 'Influnet',
+    title: 'Reveal what kept pulling attention',
+    description:
+      'Influnet reads Captanet outputs and surfaces repeated shifts, source evidence, trajectories, and themes that became more persistent over time.',
+  },
+  {
+    eyebrow: 'Memact',
+    title: 'Make the evidence usable',
+    description:
+      'Memact is the interface layer where the search, evidence cards, and future reflective tools sit on top of that memory infrastructure.',
+  },
+]
+const DEMO_STEPS = [
+  'Load Captanet in a Chromium browser and browse normally.',
+  'Export the snapshot into the workspace root with one command from the page runtime.',
+  'Run Influnet in the terminal to generate the strongest patterns, trajectories, and source evidence.',
+]
+const PROOF_STRIPS = [
+  'Local-first capture',
+  'Deterministic evidence',
+  'No hidden AI reasoning',
+]
 const EXPERIMENT_NOTICE_KEY = 'memact.experimental_notice.dismissed'
 
 function normalize(value) {
@@ -1718,7 +1748,22 @@ export default function Search({ extension }) {
           <section className="center-stage">
             {!resultsMode ? (
               <div className="home-hero">
-                <h1 className="hero-title">memact</h1>
+                <div className="hero-intro">
+                  <span className="hero-eyebrow">Memory infrastructure for the internet</span>
+                  <h1 className="hero-title">memact</h1>
+                  <p className="hero-subtitle">
+                    Capture digital activity with Captanet, trace repeated influence with
+                    Influnet, and show the user how online exposure shaped their attention over
+                    time.
+                  </p>
+                  <div className="proof-strip" aria-label="Core proof points">
+                    {PROOF_STRIPS.map((item) => (
+                      <span key={item} className="proof-chip">
+                        {item}
+                      </span>
+                    ))}
+                  </div>
+                </div>
                 <SearchBar
                   value={search.query}
                   onChange={(nextValue) => {
@@ -1738,6 +1783,35 @@ export default function Search({ extension }) {
                   }}
                   onDockVisibilityChange={setDockVisible}
                 />
+                <div className="architecture-grid" aria-label="System architecture">
+                  {PRODUCT_LAYERS.map((item) => (
+                    <article key={item.eyebrow} className="architecture-card">
+                      <span className="architecture-card__eyebrow">{item.eyebrow}</span>
+                      <h2 className="architecture-card__title">{item.title}</h2>
+                      <p className="architecture-card__text">{item.description}</p>
+                    </article>
+                  ))}
+                </div>
+                <section className="demo-flow" aria-label="Demo workflow">
+                  <div className="demo-flow__copy">
+                    <span className="demo-flow__eyebrow">Pitch flow</span>
+                    <h2 className="demo-flow__title">
+                      Show the dots connecting, not just a search result.
+                    </h2>
+                    <p className="demo-flow__text">
+                      The strongest demo is simple: browse, export the memory stream, and let
+                      Influnet surface the repeated patterns and source trails.
+                    </p>
+                  </div>
+                  <div className="demo-flow__steps">
+                    {DEMO_STEPS.map((step, index) => (
+                      <div key={step} className="demo-step">
+                        <span className="demo-step__index">0{index + 1}</span>
+                        <p className="demo-step__text">{step}</p>
+                      </div>
+                    ))}
+                  </div>
+                </section>
               </div>
             ) : null}
 
@@ -1786,7 +1860,7 @@ export default function Search({ extension }) {
 
           <footer className={`status-text ${dockVisible ? 'is-hidden' : ''}`}>
             <span>{statusText}</span>
-            <span className="status-text__version">MVP v1.1</span>
+            <span className="status-text__version">MVP v1.5 | Captanet v0.0 | Influnet v0.0</span>
           </footer>
 
           <div className={`loading-bar ${showLoadingBar ? 'is-visible' : ''}`}>
