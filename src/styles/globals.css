@@ -15,16 +15,15 @@
 }
 
 :root {
-  --bg: #f3efe5;
-  --ink: #17130d;
-  --muted: rgba(23, 19, 13, 0.62);
-  --soft: rgba(23, 19, 13, 0.08);
-  --line: rgba(23, 19, 13, 0.16);
-  --paper: rgba(255, 252, 244, 0.78);
-  --paper-strong: #fffaf0;
-  --accent: #164b35;
-  --accent-soft: rgba(22, 75, 53, 0.1);
-  --shadow: 0 24px 80px rgba(47, 36, 18, 0.13);
+  --bg: #00011b;
+  --ink: #ffffff;
+  --muted: rgba(255, 255, 255, 0.66);
+  --line: rgba(255, 255, 255, 0.16);
+  --paper: rgba(255, 255, 255, 0.07);
+  --paper-strong: rgba(255, 255, 255, 0.12);
+  --accent: #ffffff;
+  --accent-soft: rgba(255, 255, 255, 0.06);
+  --shadow: 0 24px 80px rgba(0, 0, 0, 0.36);
   --ui-font: 'IBM Plex Sans', 'Segoe UI', sans-serif;
   --brand-font: 'Orbitron', 'Segoe UI', sans-serif;
 }
@@ -44,9 +43,9 @@ body {
   min-height: 100dvh;
   color: var(--ink);
   background:
-    radial-gradient(circle at 12% 10%, rgba(255, 255, 255, 0.94), transparent 34%),
-    radial-gradient(circle at 88% 12%, rgba(191, 137, 58, 0.16), transparent 28%),
-    linear-gradient(135deg, #f7f0df 0%, #efe6d1 48%, #f9f5ec 100%);
+    radial-gradient(circle at 12% 8%, rgba(255, 255, 255, 0.14), transparent 30%),
+    radial-gradient(circle at 86% 18%, rgba(255, 255, 255, 0.08), transparent 28%),
+    var(--bg);
   font-family: var(--ui-font);
 }
 
@@ -95,7 +94,7 @@ button {
 .pipeline-row span {
   border: 1px solid var(--line);
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.38);
+  background: rgba(255, 255, 255, 0.07);
   color: var(--muted);
   font-size: 12px;
   font-weight: 700;
@@ -159,7 +158,7 @@ textarea {
   outline: 0;
   border-radius: 20px;
   padding: 18px;
-  background: rgba(255, 255, 255, 0.56);
+  background: rgba(255, 255, 255, 0.08);
   color: var(--ink);
   font-size: clamp(20px, 3vw, 30px);
   line-height: 1.28;
@@ -187,7 +186,7 @@ textarea::placeholder {
 
 .primary-action {
   background: var(--ink);
-  color: #fffaf0;
+  color: var(--bg);
 }
 
 .primary-action:disabled {
