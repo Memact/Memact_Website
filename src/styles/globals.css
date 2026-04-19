@@ -26,6 +26,10 @@
   --shadow: 0 24px 80px rgba(0, 0, 0, 0.36);
   --ui-font: 'IBM Plex Sans', 'Segoe UI', sans-serif;
   --brand-font: 'Orbitron', 'Segoe UI', sans-serif;
+  --safe-top: env(safe-area-inset-top);
+  --safe-right: env(safe-area-inset-right);
+  --safe-bottom: env(safe-area-inset-bottom);
+  --safe-left: env(safe-area-inset-left);
 }
 
 * {
@@ -36,6 +40,10 @@ html,
 body,
 #root {
   min-height: 100%;
+}
+
+html {
+  background: var(--bg);
 }
 
 body {
@@ -61,19 +69,25 @@ button {
 .memact-page {
   min-height: 100dvh;
   display: grid;
-  place-items: center;
-  padding: clamp(22px, 5vw, 64px);
+  place-items: start center;
+  padding:
+    max(24px, calc(6vh + var(--safe-top)))
+    max(22px, calc(5vw + var(--safe-right)))
+    max(24px, calc(5vh + var(--safe-bottom)))
+    max(22px, calc(5vw + var(--safe-left)));
 }
 
 .thought-shell {
-  width: min(860px, 100%);
+  width: min(900px, 100%);
   display: grid;
-  gap: 22px;
+  gap: clamp(18px, 3vw, 26px);
 }
 
 .thought-header {
   display: grid;
-  gap: 16px;
+  gap: clamp(14px, 2vw, 18px);
+  justify-items: start;
+  text-align: left;
 }
 
 .brand-row {
@@ -85,8 +99,9 @@ button {
 
 .brand-mark {
   font-family: var(--brand-font);
-  font-size: clamp(22px, 4vw, 34px);
-  letter-spacing: -0.06em;
+  font-size: clamp(18px, 3vw, 28px);
+  letter-spacing: -0.04em;
+  line-height: 1;
 }
 
 .version-pill,
@@ -107,19 +122,21 @@ button {
 }
 
 h1 {
-  max-width: 12ch;
+  max-width: 10.5ch;
   margin: 0;
-  font-size: clamp(48px, 9vw, 92px);
-  line-height: 0.92;
-  letter-spacing: -0.07em;
+  font-size: clamp(44px, 8vw, 86px);
+  line-height: 0.98;
+  letter-spacing: -0.055em;
+  text-wrap: balance;
 }
 
 .thought-header p {
-  max-width: 620px;
+  max-width: 680px;
   margin: 0;
   color: var(--muted);
-  font-size: clamp(17px, 2vw, 21px);
-  line-height: 1.55;
+  font-size: clamp(16px, 2vw, 20px);
+  line-height: 1.6;
+  text-wrap: pretty;
 }
 
 .thought-form,
@@ -165,7 +182,7 @@ textarea {
 }
 
 textarea::placeholder {
-  color: rgba(23, 19, 13, 0.35);
+  color: rgba(255, 255, 255, 0.42);
 }
 
 .form-actions {
@@ -196,7 +213,7 @@ textarea::placeholder {
 
 .secondary-action,
 .evidence-card__link {
-  background: rgba(255, 255, 255, 0.5);
+  background: rgba(255, 255, 255, 0.08);
   color: var(--ink);
 }
 
@@ -318,7 +335,15 @@ blockquote {
 @media (max-width: 680px) {
   .memact-page {
     place-items: start center;
-    padding: 18px;
+    padding:
+      max(18px, calc(18px + var(--safe-top)))
+      max(14px, calc(14px + var(--safe-right)))
+      max(18px, calc(18px + var(--safe-bottom)))
+      max(14px, calc(14px + var(--safe-left)));
+  }
+
+  .thought-shell {
+    gap: 16px;
   }
 
   .brand-row,
@@ -329,7 +354,29 @@ blockquote {
   }
 
   h1 {
-    max-width: 9ch;
+    max-width: 11ch;
+    font-size: clamp(44px, 15vw, 64px);
+    line-height: 1.02;
+    letter-spacing: -0.05em;
+  }
+
+  .thought-header p {
+    max-width: 100%;
+    font-size: 16px;
+    line-height: 1.7;
+  }
+
+  .thought-form,
+  .trace-panel,
+  .evidence-card,
+  .empty-evidence {
+    border-radius: 22px;
+  }
+
+  textarea {
+    min-height: 132px;
+    border-radius: 16px;
+    font-size: 19px;
   }
 
   .claim-grid {
@@ -339,5 +386,19 @@ blockquote {
   .primary-action,
   .secondary-action {
     width: 100%;
+  }
+
+  .pipeline-row {
+    justify-content: flex-start;
+  }
+}
+
+@media (max-width: 390px) {
+  h1 {
+    font-size: clamp(38px, 14vw, 52px);
+  }
+
+  .version-pill {
+    padding: 7px 10px;
   }
 }

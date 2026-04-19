@@ -86,10 +86,10 @@ export default function Search({ extension }) {
             <span className="brand-mark">memact</span>
             <span className="version-pill">v0.0</span>
           </div>
-          <h1 id="memact-title">Citation, but for your thoughts.</h1>
+          <h1 id="memact-title">Citations for your thoughts.</h1>
           <p>
-            Enter a thought. Memact looks through captured activity and surfaces evidence that may
-            have introduced it or shaped it over time.
+            Enter a thought. Memact surfaces captured evidence that may have introduced it or shaped
+            it over time.
           </p>
         </header>
 
