@@ -30,8 +30,6 @@ export default function SearchBar({
   const blurTimerRef = useRef(null)
   const dockPointerDownRef = useRef(false)
   const inputRef = useRef(null)
-  const shellRef = useRef(null)
-  const [dockStyle, setDockStyle] = useState(null)
 
   const visibleSuggestions = useMemo(() => suggestions.slice(0, 12), [suggestions])
   const chipsVisible = focused && !value.trim() && timeFilters.length > 0
@@ -51,55 +49,6 @@ export default function SearchBar({
   useEffect(() => {
     onDockVisibilityChange?.(dockVisible)
   }, [dockVisible, onDockVisibilityChange])
-
-  useEffect(() => {
-    if (!dockVisible) {
-      setDockStyle(null)
-      return undefined
-    }
-
-    const updateDockStyle = () => {
-      if (!shellRef.current || typeof window === 'undefined') {
-        return
-      }
-
-      const rect = shellRef.current.getBoundingClientRect()
-      const viewportHeight =
-        window.visualViewport?.height ||
-        window.innerHeight ||
-        document.documentElement.clientHeight ||
-        0
-      const viewportOffsetTop = window.visualViewport?.offsetTop || 0
-      const bottomPadding = 16
-      const availableHeight = Math.max(
-        96,
-        Math.floor(viewportHeight + viewportOffsetTop - rect.bottom - bottomPadding)
-      )
-
-      setDockStyle({
-        position: 'fixed',
-        top: `${Math.round(rect.bottom - 1)}px`,
-        left: `${Math.round(rect.left)}px`,
-        width: `${Math.round(rect.width)}px`,
-        maxHeight: `${availableHeight}px`,
-      })
-    }
-
-    updateDockStyle()
-
-    const visualViewport = window.visualViewport
-    window.addEventListener('resize', updateDockStyle)
-    window.addEventListener('scroll', updateDockStyle, true)
-    visualViewport?.addEventListener('resize', updateDockStyle)
-    visualViewport?.addEventListener('scroll', updateDockStyle)
-
-    return () => {
-      window.removeEventListener('resize', updateDockStyle)
-      window.removeEventListener('scroll', updateDockStyle, true)
-      visualViewport?.removeEventListener('resize', updateDockStyle)
-      visualViewport?.removeEventListener('scroll', updateDockStyle)
-    }
-  }, [dockVisible, visibleSuggestions.length, timeFilters.length])
 
   useEffect(() => {
     if (!focused) {
@@ -218,7 +167,6 @@ export default function SearchBar({
   return (
     <section className={`search-cluster ${dockVisible ? 'is-attached' : ''}`}>
       <form
-        ref={shellRef}
         className={`search-shell ${focused || value.trim() ? 'is-active' : ''} ${dockVisible ? 'is-attached' : ''}`}
         onSubmit={(event) => {
           event.preventDefault()
@@ -323,7 +271,6 @@ export default function SearchBar({
       {dockVisible ? (
         <div
           className={`suggestion-dock ${dockVisible ? 'is-attached' : ''}`}
-          style={dockStyle || undefined}
           onPointerDownCapture={() => {
             dockPointerDownRef.current = true
           }}

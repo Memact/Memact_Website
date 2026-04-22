@@ -158,9 +158,9 @@ button {
 .memact-logo {
   margin: 0;
   font-family: var(--brand-font);
-  font-size: clamp(58px, 12vw, 132px);
-  line-height: 0.9;
-  letter-spacing: -0.08em;
+  font-size: clamp(48px, 8vw, 96px);
+  line-height: 1;
+  letter-spacing: -0.07em;
   text-transform: lowercase;
 }
 
@@ -256,7 +256,10 @@ button {
 }
 
 .suggestion-dock {
+  position: relative;
   z-index: 25;
+  width: 100%;
+  max-height: min(320px, 42dvh);
   border: 1px solid var(--white-24);
   border-top: 0;
   border-radius: 0 0 32px 32px;
@@ -495,7 +498,7 @@ blockquote {
   }
 
   .memact-logo {
-    font-size: clamp(54px, 18vw, 84px);
+    font-size: clamp(42px, 15vw, 68px);
   }
 
   .has-results .memact-logo {
