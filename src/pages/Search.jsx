@@ -108,43 +108,83 @@ function SourceCard({ result, index }) {
 export default function Search({ extension }) {
   const search = useSearch(extension, null)
   const [submittedQuery, setSubmittedQuery] = useState('')
+  const [navigation, setNavigation] = useState({ entries: [], index: -1 })
+  const [historyOpen, setHistoryOpen] = useState(false)
   const [infoOpen, setInfoOpen] = useState(false)
-  const infoButtonRef = useRef(null)
+  const topActionsRef = useRef(null)
+  const historyPopoverRef = useRef(null)
 
   const suggestions = useMemo(() => buildActivitySuggestions(search), [search])
   const emptySuggestionMessage = buildEmptySuggestionMessage(extension)
   const status = buildStatus(extension, search, submittedQuery)
   const answerText = buildAnswerText(submittedQuery, search.answerMeta, search.results)
   const hasSubmitted = Boolean(submittedQuery)
+  const canGoBack = navigation.index > 0
+  const historyItems = search.recentSearches.filter(Boolean).slice(0, 8)
 
-  const runQuery = async (value = search.query) => {
+  const runQuery = async (value = search.query, { record = true } = {}) => {
     const query = normalize(value)
     if (!query) return
     setInfoOpen(false)
+    setHistoryOpen(false)
     search.setQuery(query)
     setSubmittedQuery(query)
+    if (record) {
+      setNavigation((current) => {
+        const base =
+          current.index >= 0
+            ? current.entries.slice(0, current.index + 1)
+            : []
+
+        if (base[base.length - 1] === query) {
+          return { entries: base, index: base.length - 1 }
+        }
+
+        const entries = [...base, query]
+        return { entries, index: entries.length - 1 }
+      })
+    }
     await search.runSearch(query)
   }
 
+  const goBack = async () => {
+    const nextIndex = navigation.index - 1
+    const query = navigation.entries[nextIndex]
+    if (!query) return
+    setNavigation((current) => ({ ...current, index: nextIndex }))
+    await runQuery(query, { record: false })
+  }
+
+  const reloadResult = async () => {
+    if (!submittedQuery) return
+    await runQuery(submittedQuery, { record: false })
+  }
+
   useEffect(() => {
-    if (!infoOpen || typeof window === 'undefined') {
+    if ((!infoOpen && !historyOpen) || typeof window === 'undefined') {
       return undefined
     }
 
-    const closeInfo = () => setInfoOpen(false)
-    const timer = window.setTimeout(closeInfo, 30000)
+    const closePanels = () => {
+      setInfoOpen(false)
+      setHistoryOpen(false)
+    }
+    const timer = infoOpen ? window.setTimeout(() => setInfoOpen(false), 30000) : null
 
     const handlePointerDown = (event) => {
       const target = event.target
-      if (infoButtonRef.current?.contains(target)) {
+      if (
+        topActionsRef.current?.contains(target) ||
+        historyPopoverRef.current?.contains(target)
+      ) {
         return
       }
-      closeInfo()
+      closePanels()
     }
 
     const handleKeyDown = (event) => {
       if (event.key === 'Enter' || event.key === 'Escape') {
-        closeInfo()
+        closePanels()
       }
     }
 
@@ -152,30 +192,87 @@ export default function Search({ extension }) {
     window.addEventListener('keydown', handleKeyDown, true)
 
     return () => {
-      window.clearTimeout(timer)
+      if (timer) window.clearTimeout(timer)
       window.removeEventListener('pointerdown', handlePointerDown, true)
       window.removeEventListener('keydown', handleKeyDown, true)
     }
-  }, [infoOpen])
+  }, [historyOpen, infoOpen])
 
   return (
     <main className={`memact-page ${hasSubmitted ? 'has-results' : 'is-home'}`}>
-      <button
-        ref={infoButtonRef}
-        type="button"
-        className="info-button"
-        aria-label="About Memact"
-        onClick={() => setInfoOpen((current) => !current)}
-      >
-        i
-      </button>
+      {hasSubmitted ? (
+        <nav className="result-controls" aria-label="Result navigation">
+          <button
+            type="button"
+            aria-label="Previous thought"
+            disabled={!canGoBack || search.loading}
+            onClick={goBack}
+          >
+            ←
+          </button>
+          <button
+            type="button"
+            aria-label="Reload sources"
+            disabled={search.loading}
+            onClick={reloadResult}
+          >
+            ↻
+          </button>
+        </nav>
+      ) : null}
+
+      <div ref={topActionsRef} className="top-actions" aria-label="Memact actions">
+        <button
+          type="button"
+          aria-label="Thought history"
+          aria-expanded={historyOpen}
+          onClick={() => {
+            setHistoryOpen((current) => !current)
+            setInfoOpen(false)
+          }}
+        >
+          ↺
+        </button>
+        <button
+          type="button"
+          aria-label="About Memact"
+          aria-expanded={infoOpen}
+          onClick={() => {
+            setInfoOpen((current) => !current)
+            setHistoryOpen(false)
+          }}
+        >
+          i
+        </button>
+      </div>
 
       {infoOpen ? (
-        <aside className="info-popover" role="dialog" aria-label="About Memact">
+        <aside className="info-popover" role="dialog" aria-label="About Memact" onClick={() => setInfoOpen(false)}>
           <p>
             See where your thoughts may have formed or been shaped. Memact looks at sources from
             what you read, watch, search, and revisit when Capture is connected.
           </p>
+        </aside>
+      ) : null}
+
+      {historyOpen ? (
+        <aside ref={historyPopoverRef} className="history-popover" role="dialog" aria-label="Thought history">
+          <p className="history-title">History</p>
+          {historyItems.length ? (
+            <div className="history-list">
+              {historyItems.map((item) => (
+                <button
+                  key={item}
+                  type="button"
+                  onClick={() => runQuery(item)}
+                >
+                  {item}
+                </button>
+              ))}
+            </div>
+          ) : (
+            <p className="history-empty">No thoughts yet.</p>
+          )}
         </aside>
       ) : null}
 
