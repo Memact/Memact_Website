@@ -4,7 +4,7 @@ import { useSearch } from '../hooks/useSearch'
 
 const SAMPLE_THOUGHT = 'I feel like I need to build something real before applying anywhere.'
 
-const PIPELINE = ['Capture', 'Inference', 'Schema', 'Query', 'Origin', 'Influence']
+const PIPELINE = ['Capture', 'Inference', 'Schema', 'Query', 'Influence', 'Origin']
 
 function normalize(value) {
   return String(value || '').replace(/\s+/g, ' ').trim()

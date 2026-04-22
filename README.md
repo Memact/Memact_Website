@@ -17,10 +17,10 @@ The user enters a thought or question. Interface queries the lower engines and r
 ## Pipeline Position
 
 ```text
-Capture -> Inference -> Schema -> Interface / Query -> Origin + Influence
+Capture -> Inference -> Schema -> Interface / Query -> Influence / Origin
 ```
 
-Interface is the point where the user enters a thought or question. Origin and Influence become meaningful after this query exists.
+Interface is the point where the user enters a thought or question. Influence and Origin become meaningful after this query exists.
 
 ## Product Meaning
 
@@ -46,10 +46,10 @@ What can Memact answer from my captured activity, and which sources support it?
   Detects repeated mental-frame signals from inferred themes.
 - `Interface`
   Accepts the user thought/question and renders the cited answer.
-- `Origin`
-  Finds high-precision source candidates that may have introduced the thought.
 - `Influence`
   Maps repeated shaping patterns, transitions, and source trails.
+- `Origin`
+  Finds high-precision source candidates that may have introduced the thought.
 
 ## Claim Rules
 
@@ -61,10 +61,10 @@ Interface must preserve the distinction between claim types:
   Deterministic theme/meaning derived from captured evidence.
 - `schema_signal`
   A repeated possible mental frame, not a diagnosis.
-- `origin_candidate`
-  A possible direct source, not proof of causation.
 - `influence_pattern`
   A repeated shaping pattern, not a claim that something created the thought.
+- `origin_candidate`
+  A possible direct source, not proof of causation.
 
 Every claim should link back to evidence.
 
