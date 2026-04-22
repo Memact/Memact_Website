@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import MathRichText from '../components/MathRichText'
 import SearchBar from '../components/SearchBar'
 import { useSearch } from '../hooks/useSearch'
-import memactLogo from '../../assets/logos/memact-text-logo.png'
+import memactLogo from '../../assets/logos/memact-text-logo-wide.png'
 
 function normalize(value) {
   return String(value || '').replace(/\s+/g, ' ').trim()

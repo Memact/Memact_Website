@@ -160,7 +160,7 @@ button {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: min(380px, 64vw);
+  width: min(620px, 78vw);
   opacity: 1;
   filter: none;
 }
@@ -176,7 +176,7 @@ button {
 }
 
 .has-results .memact-logo {
-  width: min(180px, 44vw);
+  width: min(300px, 52vw);
 }
 
 .search-cluster {
@@ -497,11 +497,11 @@ blockquote {
   }
 
   .memact-logo {
-    width: min(270px, 68vw);
+    width: min(420px, 78vw);
   }
 
   .has-results .memact-logo {
-    width: min(150px, 42vw);
+    width: min(240px, 50vw);
   }
 
   .search-shell {
