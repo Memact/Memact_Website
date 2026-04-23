@@ -296,7 +296,8 @@ export default function Search({ extension }) {
             className="nav-button nav-button--back"
             type="button"
             aria-label="Back"
-            disabled={!canGoBack}
+            data-tooltip="Back"
+            aria-disabled={!canGoBack}
             onClick={goBack}
           >
             <BackIcon />
@@ -305,7 +306,8 @@ export default function Search({ extension }) {
             className="nav-button nav-button--forward"
             type="button"
             aria-label="Next thought"
-            disabled={!canGoForward || search.loading}
+            data-tooltip="Forward"
+            aria-disabled={!canGoForward || search.loading}
             onClick={goForward}
           >
             <ForwardIcon />
@@ -314,7 +316,8 @@ export default function Search({ extension }) {
             className="nav-button nav-button--reload"
             type="button"
             aria-label="Reload"
-            disabled={search.loading}
+            data-tooltip="Reload"
+            aria-disabled={!hasSubmitted || search.loading}
             onClick={reloadCurrent}
           >
             <ReloadIcon />
@@ -327,6 +330,7 @@ export default function Search({ extension }) {
           className="top-action-button top-action-button--history"
           type="button"
           aria-label="Thought history"
+          data-tooltip="History"
           aria-expanded={historyOpen}
           onClick={() => {
             setHistoryOpen((current) => !current)
@@ -339,6 +343,7 @@ export default function Search({ extension }) {
           className="top-action-button top-action-button--info"
           type="button"
           aria-label="About Memact"
+          data-tooltip="Info"
           aria-expanded={infoOpen}
           onClick={() => {
             setInfoOpen((current) => !current)
@@ -367,6 +372,7 @@ export default function Search({ extension }) {
                 className="history-clear-button"
                 type="button"
                 aria-label="Clear all history"
+                data-tooltip="Clear"
                 onClick={() => search.clearHistory()}
               >
                 <TrashIcon />
@@ -388,6 +394,7 @@ export default function Search({ extension }) {
                     className="history-delete-button"
                     type="button"
                     aria-label={`Delete ${item}`}
+                    data-tooltip="Delete"
                     onClick={() => search.removeHistoryQuery(item)}
                   >
                     <DeleteIcon />

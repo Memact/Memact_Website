@@ -78,6 +78,57 @@ button {
   cursor: pointer;
 }
 
+[data-tooltip] {
+  position: relative;
+}
+
+[data-tooltip]::after {
+  position: absolute;
+  top: calc(100% + 10px);
+  left: 50%;
+  z-index: 80;
+  min-width: max-content;
+  max-width: 180px;
+  padding: 7px 10px;
+  border: 1px solid var(--white-16);
+  border-radius: 999px;
+  background: rgba(0, 1, 27, 0.92);
+  box-shadow: 0 16px 42px rgba(0, 0, 0, 0.34);
+  color: var(--white);
+  content: attr(data-tooltip);
+  font-family: var(--ui-font);
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  line-height: 1;
+  opacity: 0;
+  pointer-events: none;
+  text-transform: uppercase;
+  transform: translateX(-50%) translateY(-3px);
+  transition: opacity 140ms ease, transform 140ms ease;
+  white-space: nowrap;
+}
+
+[data-tooltip]:hover::after,
+[data-tooltip]:focus-visible::after {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+
+.top-actions button:last-child::after,
+.history-clear-button::after {
+  right: 0;
+  left: auto;
+  transform: translateY(-3px);
+}
+
+.top-actions button:last-child:hover::after,
+.top-actions button:last-child:focus-visible::after,
+.history-clear-button:hover::after,
+.history-clear-button:focus-visible::after {
+  transform: translateY(0);
+}
+
 .memact-page {
   position: relative;
   width: 100%;
@@ -130,13 +181,14 @@ button {
   line-height: 1;
 }
 
-.result-controls button:hover:not(:disabled),
-.result-controls button:focus-visible:not(:disabled) {
+.result-controls button:hover:not(:disabled):not([aria-disabled="true"]),
+.result-controls button:focus-visible:not(:disabled):not([aria-disabled="true"]) {
   outline: none;
   background: var(--white-10);
 }
 
-.result-controls button:disabled {
+.result-controls button:disabled,
+.result-controls button[aria-disabled="true"] {
   color: var(--white-24);
   cursor: default;
 }
@@ -436,7 +488,7 @@ button {
   background: var(--panel);
   box-shadow: var(--shadow);
   backdrop-filter: blur(20px);
-  overflow: hidden;
+  overflow: visible;
 }
 
 .search-shell.is-active {
@@ -481,10 +533,60 @@ button {
   place-items: center;
 }
 
+.search-button::after {
+  top: calc(100% + 12px);
+}
+
 .search-button img {
   width: 26px;
   height: 26px;
   display: block;
+}
+
+.search-button.is-listening {
+  background: var(--white-10);
+}
+
+.search-button.is-listening::before {
+  position: absolute;
+  inset: 5px;
+  border: 1px solid var(--white-46);
+  border-radius: 999px;
+  content: "";
+  opacity: 0.8;
+  animation: memact-voice-pulse 1.15s ease-in-out infinite;
+}
+
+@keyframes memact-voice-pulse {
+  0% {
+    opacity: 0.8;
+    transform: scale(0.92);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.22);
+  }
+}
+
+.voice-status {
+  justify-self: center;
+  width: fit-content;
+  max-width: min(100%, 560px);
+  margin: 10px auto 0;
+  padding: 8px 13px;
+  border: 1px solid var(--white-16);
+  border-radius: 999px;
+  background: var(--white-06);
+  color: var(--white-76);
+  font-size: 12px;
+  font-weight: 900;
+  letter-spacing: 0.04em;
+  line-height: 1.25;
+  text-align: center;
+}
+
+.voice-status--listening {
+  color: var(--white);
 }
 
 .search-button:disabled {

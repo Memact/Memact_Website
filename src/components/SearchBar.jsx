@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import enterIcon from '../../assets/enter_icon.svg'
-import searchIcon from '../../assets/search_icon.svg'
+import micIcon from '../../assets/mic_icon.svg'
 
 function isPrintableKey(event) {
   return (
@@ -9,6 +9,12 @@ function isPrintableKey(event) {
     !event.altKey &&
     !event.metaKey
   )
+}
+
+function normalizeSpeechText(value) {
+  return String(value || '')
+    .replace(/\s+/g, ' ')
+    .trim()
 }
 
 export default function SearchBar({
@@ -29,9 +35,15 @@ export default function SearchBar({
   const [focused, setFocused] = useState(false)
   const [selectedIndex, setSelectedIndex] = useState(-1)
   const [typedBeforeSelection, setTypedBeforeSelection] = useState('')
+  const [voiceState, setVoiceState] = useState('idle')
+  const [voiceMessage, setVoiceMessage] = useState('')
   const blurTimerRef = useRef(null)
   const dockPointerDownRef = useRef(false)
   const inputRef = useRef(null)
+  const recognitionRef = useRef(null)
+  const voiceSubmitTimerRef = useRef(null)
+  const finalVoiceTextRef = useRef('')
+  const latestVoiceTextRef = useRef('')
 
   const visibleSuggestions = useMemo(() => suggestions.slice(0, 12), [suggestions])
   const chipsVisible = focused && !value.trim() && timeFilters.length > 0
@@ -44,6 +56,7 @@ export default function SearchBar({
   const previewActive = Boolean(selectedSuggestion)
   const inputValue = previewActive ? selectedSuggestion.completion : value
   const hasActiveSearchText = focused && Boolean(inputValue.trim())
+  const voiceActive = voiceState === 'listening' || voiceState === 'processing'
 
   useEffect(() => {
     onFocusChange?.(focused)
@@ -77,6 +90,10 @@ export default function SearchBar({
       if (blurTimerRef.current) {
         window.clearTimeout(blurTimerRef.current)
       }
+      if (voiceSubmitTimerRef.current) {
+        window.clearTimeout(voiceSubmitTimerRef.current)
+      }
+      recognitionRef.current?.abort?.()
     }
   }, [])
 
@@ -164,6 +181,121 @@ export default function SearchBar({
     setFocused(true)
     if (selectedIndex === -1) {
       setTypedBeforeSelection(value)
+    }
+  }
+
+  const startVoiceInput = () => {
+    if (loading || typeof window === 'undefined') {
+      return
+    }
+
+    if (voiceState === 'listening') {
+      recognitionRef.current?.stop?.()
+      return
+    }
+
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition
+    if (!SpeechRecognition) {
+      setVoiceState('unsupported')
+      setVoiceMessage('Voice input is not available in this browser.')
+      window.setTimeout(() => {
+        setVoiceState('idle')
+        setVoiceMessage('')
+      }, 3200)
+      return
+    }
+
+    if (voiceSubmitTimerRef.current) {
+      window.clearTimeout(voiceSubmitTimerRef.current)
+      voiceSubmitTimerRef.current = null
+    }
+
+    const recognition = new SpeechRecognition()
+    recognitionRef.current = recognition
+    finalVoiceTextRef.current = ''
+    latestVoiceTextRef.current = ''
+    recognition.lang = 'en-US'
+    recognition.continuous = false
+    recognition.interimResults = true
+    recognition.maxAlternatives = 1
+
+    recognition.onstart = () => {
+      clearPreview()
+      setFocused(true)
+      setVoiceState('listening')
+      setVoiceMessage('Listening. Say the thought you want Memact to connect.')
+      window.requestAnimationFrame(() => {
+        inputRef.current?.focus({ preventScroll: true })
+      })
+    }
+
+    recognition.onresult = (event) => {
+      let interim = ''
+      let finalText = ''
+      for (let index = event.resultIndex; index < event.results.length; index += 1) {
+        const transcript = event.results[index]?.[0]?.transcript || ''
+        if (event.results[index]?.isFinal) {
+          finalText += transcript
+        } else {
+          interim += transcript
+        }
+      }
+
+      const spokenText = normalizeSpeechText(finalText || interim)
+      if (!spokenText) {
+        return
+      }
+
+      onChange?.(spokenText)
+      latestVoiceTextRef.current = spokenText
+      if (finalText) {
+        finalVoiceTextRef.current = spokenText
+        setVoiceState('processing')
+        setVoiceMessage('Connecting the dots...')
+      }
+    }
+
+    recognition.onerror = (event) => {
+      const errorText =
+        event?.error === 'not-allowed'
+          ? 'Microphone access was blocked.'
+          : 'Voice input stopped. Try again.'
+      setVoiceState('unsupported')
+      setVoiceMessage(errorText)
+      window.setTimeout(() => {
+        setVoiceState('idle')
+        setVoiceMessage('')
+      }, 2800)
+    }
+
+    recognition.onend = () => {
+      const finalText = normalizeSpeechText(finalVoiceTextRef.current || latestVoiceTextRef.current)
+      recognitionRef.current = null
+      if (!finalText) {
+        setVoiceState('idle')
+        setVoiceMessage('')
+        return
+      }
+
+      setVoiceState('processing')
+      setVoiceMessage('Connecting the dots...')
+      voiceSubmitTimerRef.current = window.setTimeout(() => {
+        setVoiceState('idle')
+        setVoiceMessage('')
+        makeSearchPassive()
+        onSubmit?.(finalText)
+      }, 420)
+    }
+
+    try {
+      recognition.start()
+    } catch {
+      setVoiceState('unsupported')
+      setVoiceMessage('Voice input is already active.')
+      window.setTimeout(() => {
+        setVoiceState('idle')
+        setVoiceMessage('')
+      }, 2200)
     }
   }
 
@@ -264,14 +396,27 @@ export default function SearchBar({
         />
 
         <button
-          className={`search-button ${hasActiveSearchText ? 'is-enter' : 'is-search'}`}
-          type="submit"
-          aria-label={hasActiveSearchText ? 'Submit thought' : 'Find sources'}
+          className={`search-button ${hasActiveSearchText ? 'is-enter' : 'is-mic'} ${voiceActive ? 'is-listening' : ''}`}
+          type={hasActiveSearchText ? 'submit' : 'button'}
+          aria-label={hasActiveSearchText ? 'Submit thought' : 'Speak thought'}
+          data-tooltip={hasActiveSearchText ? 'Enter' : 'Speak'}
           disabled={loading}
+          onMouseDown={(event) => event.preventDefault()}
+          onClick={() => {
+            if (!hasActiveSearchText) {
+              startVoiceInput()
+            }
+          }}
         >
-          <img src={hasActiveSearchText ? enterIcon : searchIcon} alt="" aria-hidden="true" />
+          <img src={hasActiveSearchText ? enterIcon : micIcon} alt="" aria-hidden="true" />
         </button>
       </form>
+
+      {voiceMessage ? (
+        <div className={`voice-status voice-status--${voiceState}`} role="status">
+          {voiceMessage}
+        </div>
+      ) : null}
 
       {dockVisible ? (
         <div
