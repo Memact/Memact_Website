@@ -125,24 +125,21 @@ function InfoIcon() {
 
 function DeleteIcon() {
   return (
-    <svg className="control-icon control-icon--delete" viewBox="0 0 24 24" aria-hidden="true">
-      <path d="M8 8.5h8" />
-      <path d="M10 8.5V6.75h4v1.75" />
-      <path d="M9 10.5 9.55 18h4.9L15 10.5" />
-      <path d="M11 12.2v3.7" />
-      <path d="M13 12.2v3.7" />
+    <svg className="control-icon control-icon--cross" viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M7.5 7.5 16.5 16.5" />
+      <path d="M16.5 7.5 7.5 16.5" />
     </svg>
   )
 }
 
 function TrashIcon() {
   return (
-    <svg className="control-icon control-icon--delete" viewBox="0 0 24 24" aria-hidden="true">
-      <path d="M7.5 8.5h9" />
-      <path d="M10 8.5V6.5h4v2" />
-      <path d="M8.7 10.5 9.25 18.4h5.5l.55-7.9" />
-      <path d="M11 12.2v4" />
-      <path d="M13 12.2v4" />
+    <svg className="control-icon control-icon--trash" viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M7 8h10" />
+      <path d="M9.75 8V5.75h4.5V8" />
+      <path d="M8.35 10.25 9 19h6l.65-8.75" />
+      <path d="M11 11.75v5.25" />
+      <path d="M13 11.75v5.25" />
     </svg>
   )
 }
