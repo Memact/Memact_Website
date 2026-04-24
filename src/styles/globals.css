@@ -929,9 +929,8 @@ button {
 
 .processing-pane {
   position: fixed;
-  right: max(18px, calc(18px + var(--safe-right)));
+  left: 50%;
   bottom: max(18px, calc(18px + var(--safe-bottom)));
-  left: max(18px, calc(18px + var(--safe-left)));
   z-index: 70;
   width: min(920px, calc(100vw - 36px));
   display: grid;
@@ -943,6 +942,7 @@ button {
   border-radius: 26px;
   background: rgba(7, 8, 38, 0.96);
   box-shadow: var(--shadow);
+  transform: translateX(-50%);
   backdrop-filter: blur(20px);
 }
 
@@ -1460,6 +1460,8 @@ blockquote {
   }
 
   .processing-pane {
+    left: 50%;
+    right: auto;
     grid-template-columns: 1fr;
     gap: 14px;
   }
@@ -1526,16 +1528,16 @@ blockquote {
   }
 
   .processing-pane {
-    right: max(12px, calc(12px + var(--safe-right)));
+    left: 50%;
     bottom: max(12px, calc(12px + var(--safe-bottom)));
-    left: max(12px, calc(12px + var(--safe-left)));
-    width: auto;
+    right: auto;
+    width: min(calc(100vw - 24px), 560px);
     padding: 16px 14px 14px;
     border-radius: 22px;
   }
 
   .processing-pane.is-collapsed {
-    width: calc(100vw - 24px);
+    width: min(calc(100vw - 24px), 360px);
     padding: 12px;
   }
 

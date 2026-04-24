@@ -10,11 +10,10 @@
   },
   "homepage": "https://github.com/Memact/Website",
   "scripts": {
-    "postinstall": "node scripts/sync-transformers.mjs",
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "package-extension": "node scripts/package-extension.mjs"
+    "sync-capture-zip": "node scripts/sync-capture-zip.mjs"
   },
   "dependencies": {
     "@huggingface/transformers": "^4.1.0",

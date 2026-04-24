@@ -54,6 +54,10 @@ After that, Memact can ask to import some recent activity from this device so it
 - If the user skips it, Memact waits for new activity from then on.
 - If the user changes their mind later, the `Settings` button lets them turn local import on.
 
+Website does not keep its own extension source code.
+Capture is the only extension codebase.
+Website only serves the packaged zip that comes from Capture.
+
 ## Run Locally
 
 You need:
@@ -87,7 +91,22 @@ npm run preview
 
 ## Extension Zip
 
-The website serves the same extension zip used in setup here:
+Build the extension in Capture first:
+
+```powershell
+cd ..\capture
+npm install
+npm run package-extension
+```
+
+Then sync that packaged zip into Website:
+
+```powershell
+cd ..\interface
+npm run sync-capture-zip
+```
+
+The website then serves that same packaged zip here:
 
 ```text
 public/memact-extension.zip
