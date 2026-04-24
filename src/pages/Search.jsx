@@ -310,6 +310,11 @@ export default function Search({ extension }) {
   const status = buildStatus(extension, search, submittedQuery, voiceState)
   const answerText = buildAnswerText(submittedQuery, search.answerMeta, search.results)
   const shouldShowStatus = status !== 'Ready.'
+  const shouldShowLoader =
+    search.loading ||
+    bootstrapState.status === 'running' ||
+    voiceState === 'listening' ||
+    voiceState === 'processing'
   const hasSubmitted = Boolean(submittedQuery)
   const canGoBack = navigation.index >= 0
   const canGoForward = navigation.index < navigation.entries.length - 1
@@ -828,7 +833,16 @@ export default function Search({ extension }) {
           emptySuggestionMessage={emptySuggestionMessage}
         />
         {shouldShowStatus ? (
-          <p className="search-status">{status}</p>
+          <div className={`search-status-wrap ${shouldShowLoader ? 'is-loading' : ''}`}>
+            {shouldShowLoader ? (
+              <span className="memact-inline-loader" aria-hidden="true">
+                <span />
+                <span />
+                <span />
+              </span>
+            ) : null}
+            <p className="search-status">{status}</p>
+          </div>
         ) : null}
       </section>
 
