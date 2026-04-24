@@ -309,6 +309,7 @@ export default function Search({ extension }) {
   const emptySuggestionMessage = buildEmptySuggestionMessage(extension, importDecision)
   const status = buildStatus(extension, search, submittedQuery, voiceState)
   const answerText = buildAnswerText(submittedQuery, search.answerMeta, search.results)
+  const shouldShowStatus = status !== 'Ready.'
   const hasSubmitted = Boolean(submittedQuery)
   const canGoBack = navigation.index >= 0
   const canGoForward = navigation.index < navigation.entries.length - 1
@@ -826,7 +827,9 @@ export default function Search({ extension }) {
           suggestions={suggestions}
           emptySuggestionMessage={emptySuggestionMessage}
         />
-        <p className="search-status">{status}</p>
+        {shouldShowStatus ? (
+          <p className="search-status">{status}</p>
+        ) : null}
       </section>
 
       {hasSubmitted ? (
