@@ -24,6 +24,7 @@ export default function SearchBar({
   onSuggestionClick,
   placeholder = 'Search',
   loading = false,
+  disabled = false,
   suggestions = [],
   timeFilters = [],
   activeTimeFilter = null,
@@ -56,8 +57,8 @@ export default function SearchBar({
     [placeholder]
   )
   const visibleSuggestions = useMemo(() => suggestions.slice(0, 12), [suggestions])
-  const chipsVisible = focused && !value.trim() && timeFilters.length > 0
-  const emptySuggestionsVisible = focused && Boolean(emptySuggestionMessage) && visibleSuggestions.length === 0
+  const chipsVisible = !disabled && focused && !value.trim() && timeFilters.length > 0
+  const emptySuggestionsVisible = !disabled && focused && Boolean(emptySuggestionMessage) && visibleSuggestions.length === 0
   const dockVisible = focused && (chipsVisible || visibleSuggestions.length > 0 || emptySuggestionsVisible)
   const selectedSuggestion =
     selectedIndex >= 0 && selectedIndex < visibleSuggestions.length
@@ -137,6 +138,15 @@ export default function SearchBar({
       setSelectedIndex(-1)
     }
   }, [previewActive, selectedIndex, selectedSuggestion?.completion, visibleSuggestions])
+
+  useEffect(() => {
+    if (!disabled) {
+      return
+    }
+
+    setFocused(false)
+    setSelectedIndex(-1)
+  }, [disabled])
 
   useEffect(() => {
     return () => {
@@ -237,6 +247,10 @@ export default function SearchBar({
   }
 
   const handleFocus = () => {
+    if (disabled) {
+      inputRef.current?.blur()
+      return
+    }
     if (blurTimerRef.current) {
       window.clearTimeout(blurTimerRef.current)
       blurTimerRef.current = null
@@ -249,7 +263,7 @@ export default function SearchBar({
   }
 
   const startVoiceInput = () => {
-    if (loading || typeof window === 'undefined') {
+    if (disabled || loading || typeof window === 'undefined') {
       return
     }
 
@@ -360,9 +374,12 @@ export default function SearchBar({
   return (
     <section className={`search-cluster ${dockVisible ? 'is-attached' : ''}`}>
       <form
-        className={`search-shell ${focused || value.trim() ? 'is-active' : ''} ${dockVisible ? 'is-attached' : ''}`}
+        className={`search-shell ${focused || value.trim() ? 'is-active' : ''} ${dockVisible ? 'is-attached' : ''} ${disabled ? 'is-disabled' : ''}`}
         onSubmit={(event) => {
           event.preventDefault()
+          if (disabled) {
+            return
+          }
           onInteraction?.()
           if (selectedSuggestion) {
             submitSuggestion(selectedSuggestion, { passiveAfterSubmit: true })
@@ -376,7 +393,11 @@ export default function SearchBar({
           ref={inputRef}
           className={`search-input ${!value ? 'is-empty' : ''} ${previewActive ? 'is-preview' : ''}`}
           value={inputValue}
+          disabled={disabled}
           onChange={(event) => {
+            if (disabled) {
+              return
+            }
             onInteraction?.()
             clearPreview()
             onChange?.(event.target.value)
@@ -384,6 +405,9 @@ export default function SearchBar({
           onFocus={handleFocus}
           onBlur={handleBlur}
           onKeyDown={(event) => {
+            if (disabled) {
+              return
+            }
             if (previewActive && isPrintableKey(event)) {
               event.preventDefault()
               clearPreview()
@@ -467,9 +491,12 @@ export default function SearchBar({
           type={hasActiveSearchText ? 'submit' : 'button'}
           aria-label={hasActiveSearchText ? 'Submit' : 'Speak'}
           data-tooltip={hasActiveSearchText ? 'Enter' : 'Speak'}
-          disabled={loading}
+          disabled={loading || disabled}
           onMouseDown={(event) => event.preventDefault()}
           onClick={() => {
+            if (disabled) {
+              return
+            }
             if (!hasActiveSearchText) {
               startVoiceInput()
             }

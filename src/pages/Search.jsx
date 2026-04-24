@@ -300,6 +300,7 @@ export default function Search({ extension }) {
   const [importDecision, setImportDecision] = useState('')
   const [setupPromptRequested, setSetupPromptRequested] = useState(false)
   const [bootstrapRequested, setBootstrapRequested] = useState(false)
+  const [processingPaneDismissed, setProcessingPaneDismissed] = useState(false)
   const [thoughtPrompt] = useState(() => THOUGHT_PROMPTS[Math.floor(Math.random() * THOUGHT_PROMPTS.length)])
   const topActionsRef = useRef(null)
   const historyPopoverRef = useRef(null)
@@ -310,6 +311,7 @@ export default function Search({ extension }) {
   const status = buildStatus(extension, search, submittedQuery, voiceState)
   const answerText = buildAnswerText(submittedQuery, search.answerMeta, search.results)
   const bootstrapState = extension?.bootstrap || {}
+  const isBackgroundProcessing = bootstrapRequested || bootstrapState.status === 'running'
   const shouldShowStatus = status !== 'Ready.'
   const shouldShowLoader =
     search.loading ||
@@ -339,10 +341,11 @@ export default function Search({ extension }) {
     !shouldShowInstallModal &&
     setupPromptRequested &&
     shouldAskForImport
-  const shouldShowProcessingModal =
+  const shouldShowProcessingPane =
     !shouldShowInstallModal &&
     !shouldShowImportModal &&
-    (bootstrapRequested || bootstrapState.status === 'running')
+    isBackgroundProcessing &&
+    !processingPaneDismissed
 
   const requestSetupPrompt = () => {
     setSetupPromptRequested(true)
@@ -398,6 +401,12 @@ export default function Search({ extension }) {
 
     setBootstrapRequested(false)
   }, [bootstrapState.status])
+
+  useEffect(() => {
+    if (isBackgroundProcessing) {
+      setProcessingPaneDismissed(false)
+    }
+  }, [isBackgroundProcessing])
 
   useEffect(() => {
     const canAutoOpenInfo =
@@ -591,24 +600,6 @@ export default function Search({ extension }) {
               }}
             >
               Use future activity only
-            </button>
-          }
-        />
-      ) : null}
-
-      {shouldShowProcessingModal ? (
-        <OnboardingModal
-          title="Processing..."
-          body="Memact is going through recent activity and getting your first suggestions ready."
-          progress={Number(bootstrapState.progress_percent || 0)}
-          note={bootstrapState.note || 'Checking what to keep.'}
-          secondaryAction={
-            <button
-              className="memact-modal__button memact-modal__button--muted"
-              type="button"
-              disabled
-            >
-              Working locally
             </button>
           }
         />
@@ -829,6 +820,7 @@ export default function Search({ extension }) {
           onVoiceStateChange={setVoiceState}
           placeholder={EXAMPLE_PLACEHOLDERS}
           loading={search.loading}
+          disabled={isBackgroundProcessing}
           suggestions={suggestions}
           emptySuggestionMessage={emptySuggestionMessage}
         />
@@ -871,6 +863,39 @@ export default function Search({ extension }) {
             )}
           </section>
         </section>
+      ) : null}
+
+      {shouldShowProcessingPane ? (
+        <aside className="processing-pane" role="status" aria-live="polite" aria-label="Memact setup progress">
+          <div className="processing-pane__copy">
+            <p className="processing-pane__eyebrow">Memact setup</p>
+            <p className="processing-pane__title">Working in the background.</p>
+            <p className="processing-pane__text">
+              Memact is going through recent activity and getting your first suggestions ready. Search will open when this finishes.
+            </p>
+          </div>
+          <div className="processing-pane__meta">
+            <div className="processing-pane__progress">
+              <div className="processing-pane__progress-bar">
+                <span style={{ width: `${Math.max(4, Math.min(100, Number(bootstrapState.progress_percent || 0)))}%` }} />
+              </div>
+              <p className="processing-pane__note">
+                {bootstrapState.note || 'Checking what to keep.'}
+              </p>
+            </div>
+            <p className="processing-pane__percent">
+              {Math.max(1, Math.min(100, Math.round(Number(bootstrapState.progress_percent || 0))))}%
+            </p>
+            <button
+              className="processing-pane__close"
+              type="button"
+              aria-label="Close processing pane"
+              onClick={() => setProcessingPaneDismissed(true)}
+            >
+              <DeleteIcon />
+            </button>
+          </div>
+        </aside>
       ) : null}
 
     </main>
