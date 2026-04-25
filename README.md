@@ -49,8 +49,9 @@ The important rule is simple:
 Gemini can answer from a small evidence packet, but the evidence must already come from deterministic Memact engines.
 Memact sends only the query, selected schema/origin/influence signals, and a few source summaries, not the full Capture snapshot.
 
-Website uses Capture's lightweight memory signature before pulling a full snapshot.
-That means it does not keep downloading captured memory when nothing changed.
+Website listens for Capture's lightweight Memory Pulse before refreshing local knowledge.
+The pulse only says that memory changed; it does not contain captured page content.
+That means Website does not keep downloading captured memory when nothing changed.
 Search still talks to Capture directly, and Capture ranks results with local sentence-transformer embeddings.
 Capture keeps collecting automatically through the extension bridge; it no longer relies on repeated snapshot downloads.
 
@@ -145,6 +146,9 @@ npm run serve
 ```
 
 If `VITE_MEMACT_GEMINI_ENDPOINT` is not set, Memact still works with deterministic answers and sources.
+
+If the extension bridge or Gemini endpoint is slow, Website falls back to Memact's deterministic local pipeline.
+It should show an honest no-source state instead of a generic failed-search message.
 
 ## Extension Zip
 

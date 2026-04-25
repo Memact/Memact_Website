@@ -402,6 +402,61 @@ function normalizeAnswerMeta(item) {
   }
 }
 
+function resultFromOriginCandidate(candidate, index = 0) {
+  const source = Array.isArray(candidate?.sources) ? candidate.sources[0] : null
+  if (!candidate || !source) {
+    return null
+  }
+
+  return normalizeResult({
+    id: candidate.id || `origin-${index}`,
+    title: source.title || candidate.source_label || 'Captured source',
+    url: source.url || '',
+    domain: source.domain || '',
+    application: source.application || 'Browser',
+    occurred_at: source.occurred_at || source.started_at || '',
+    structured_summary:
+      candidate.reason ||
+      `Matched ${Number(candidate.token_overlap || 0)} terms from the thought.`,
+    snippet:
+      candidate.evidence?.text_excerpt ||
+      source.title ||
+      candidate.source_label ||
+      '',
+    context_topics: candidate.canonical_themes || [],
+    source: 'origin',
+    score: candidate.score || 0,
+  }, index)
+}
+
+function resultsFromDeterministicAnalysis(analysis) {
+  return (analysis?.origin?.candidates || [])
+    .map(resultFromOriginCandidate)
+    .filter(Boolean)
+}
+
+function buildNoSourceAnswerMeta(query) {
+  return {
+    overview: `Memact checked captured activity for "${query}".`,
+    answer: query,
+    summary: 'Memact did not find strong enough sources yet.',
+    detailsLabel: 'Evidence around this thought',
+    detailItems: [{ label: 'Matches', value: '0' }],
+    signals: [],
+    relatedQueries: [],
+    sessionPrompts: [],
+  }
+}
+
+function hasDeterministicEvidence(analysis, results = []) {
+  return Boolean(
+    results.length ||
+      analysis?.origin?.candidates?.length ||
+      analysis?.relevantSchemas?.length ||
+      analysis?.relevantInfluence?.length
+  )
+}
+
 export function useSearch(extension, activeTimeFilter = null) {
   const [query, setQuery] = useState('')
   const [results, setResults] = useState([])
@@ -620,9 +675,11 @@ export function useSearch(extension, activeTimeFilter = null) {
       }
 
       try {
-        const response = await extension.search(normalized, 20)
+        let response = await extension.search(normalized, 20)
+        let refreshedKnowledge = null
         if (!response || response.error) {
-          throw new Error(response?.error || 'Search failed.')
+          refreshedKnowledge = await extension.refreshKnowledge?.().catch(() => null)
+          response = null
         }
 
         const items = Array.isArray(response)
@@ -631,22 +688,34 @@ export function useSearch(extension, activeTimeFilter = null) {
             ? response.results
             : []
 
-        const normalizedResults = items.map(normalizeResult)
+        const deterministicAnalysis =
+          (refreshedKnowledge ? extension?.analyzeThought?.(normalized, refreshedKnowledge) : null) ||
+          extension?.analyzeThought?.(normalized)
+        const deterministicResults = resultsFromDeterministicAnalysis(deterministicAnalysis)
+        const normalizedResults = items.length
+          ? items.map(normalizeResult)
+          : deterministicResults
         const normalizedAnswerMeta = normalizeAnswerMeta(response?.answer)
-        const deterministicAnalysis = extension?.analyzeThought?.(normalized)
         const deterministicAnswerMeta = normalizeAnswerMeta(deterministicAnalysis?.answer)
+        const finalAnswerMeta =
+          deterministicAnswerMeta ||
+          normalizedAnswerMeta ||
+          buildNoSourceAnswerMeta(normalized)
         resultCacheRef.current.set(cacheKey, {
           results: normalizedResults,
-          answerMeta: deterministicAnswerMeta || normalizedAnswerMeta,
+          answerMeta: finalAnswerMeta,
         })
-        setAnswerMeta(deterministicAnswerMeta || normalizedAnswerMeta)
+        setAnswerMeta(finalAnswerMeta)
         setResults(normalizedResults)
 
-        if (deterministicAnswerMeta || normalizedAnswerMeta) {
+        if (
+          (deterministicAnswerMeta || normalizedAnswerMeta) &&
+          hasDeterministicEvidence(deterministicAnalysis, normalizedResults)
+        ) {
           void requestCloudExplanation({
             query: normalized,
             explanation: deterministicAnalysis?.explanation,
-            answerMeta: deterministicAnswerMeta || normalizedAnswerMeta,
+            answerMeta: finalAnswerMeta,
             results: normalizedResults,
           }).then((structured) => {
             if (
@@ -676,9 +745,27 @@ export function useSearch(extension, activeTimeFilter = null) {
 
         return normalizedResults
       } catch (err) {
-        setError(err?.message || 'Search failed.')
+        const refreshedKnowledge = await extension.refreshKnowledge?.().catch(() => null)
+        const deterministicAnalysis =
+          (refreshedKnowledge ? extension?.analyzeThought?.(normalized, refreshedKnowledge) : null) ||
+          extension?.analyzeThought?.(normalized)
+        const deterministicAnswerMeta = normalizeAnswerMeta(deterministicAnalysis?.answer)
+        const fallbackResults = resultsFromDeterministicAnalysis(deterministicAnalysis)
+
+        if (deterministicAnswerMeta || fallbackResults.length) {
+          setError('')
+          setResults(fallbackResults)
+          setAnswerMeta(deterministicAnswerMeta)
+          resultCacheRef.current.set(cacheKey, {
+            results: fallbackResults,
+            answerMeta: deterministicAnswerMeta,
+          })
+          return fallbackResults
+        }
+
+        setError('')
         setResults([])
-        setAnswerMeta(null)
+        setAnswerMeta(buildNoSourceAnswerMeta(normalized))
         return []
       } finally {
         setLoading(false)

@@ -67,6 +67,7 @@ export function useExtension() {
   const [webMemoryCount, setWebMemoryCount] = useState(0)
   const [knowledge, setKnowledge] = useState(null)
   const [bootstrap, setBootstrap] = useState(null)
+  const [memoryPulse, setMemoryPulse] = useState(null)
   const pending = useRef(new Map())
   const knowledgeRefreshInFlight = useRef(null)
   const knowledgeSignatureRef = useRef('')
@@ -154,6 +155,17 @@ export function useExtension() {
       if (data.type === 'MEMACT_EXTENSION_READY') {
         setDetected(true)
         setBridgeDetected(true)
+        return
+      }
+
+      if (data.type === 'MEMACT_MEMORY_PULSE' && data.pulse) {
+        setDetected(true)
+        setBridgeDetected(true)
+        setReady(Boolean(data.pulse.ready))
+        if (data.pulse.bootstrap) {
+          setBootstrap(data.pulse.bootstrap)
+        }
+        setMemoryPulse(data.pulse)
         return
       }
 
@@ -358,6 +370,20 @@ export function useExtension() {
   }, [bridgeDetected, refreshKnowledge])
 
   useEffect(() => {
+    if (!bridgeDetected || !memoryPulse) {
+      return undefined
+    }
+
+    const signature = statusSignature(memoryPulse)
+    if (!signature || signature === knowledgeSignatureRef.current) {
+      return undefined
+    }
+
+    refreshKnowledge().catch(() => {})
+    return undefined
+  }, [bridgeDetected, memoryPulse, refreshKnowledge])
+
+  useEffect(() => {
     if (!bridgeDetected || bootstrap?.status !== 'running') {
       return undefined
     }
@@ -401,11 +427,11 @@ export function useExtension() {
     return state
   }, [bootstrapHistory])
 
-  const analyzeThought = useCallback((query) => {
-    if (!knowledge) {
+  const analyzeThought = useCallback((query, sourceKnowledge = knowledge) => {
+    if (!sourceKnowledge) {
       return null
     }
-    return analyzeThoughtQuery(query, knowledge)
+    return analyzeThoughtQuery(query, sourceKnowledge)
   }, [knowledge])
 
   const mode = bridgeDetected ? 'extension' : useWebFallback ? 'web-fallback' : 'bridge-required'
