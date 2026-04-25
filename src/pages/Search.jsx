@@ -76,9 +76,11 @@ function buildStatus(extension, search, submittedQuery, voiceState) {
     const progress = Math.max(1, Number(extension?.bootstrap?.progress_percent || 0))
     return `Processing... ${progress}%`
   }
-  if (search.loading) return 'Finding sources...'
+  if (search.loading) return 'Answering...'
   if (search.error) return search.error
-  if (submittedQuery && search.results.length) return `${search.results.length} source candidates`
+  if (submittedQuery && search.results.length) {
+    return `Answer backed by ${search.results.length} source${search.results.length === 1 ? '' : 's'}.`
+  }
   if (submittedQuery) return 'No strong source match yet.'
   if (extension?.bootstrap?.status === 'complete' && Number(extension?.bootstrap?.imported_count || 0) > 0) {
     return `${extension.bootstrap.imported_count} early activity sources seeded.`
@@ -108,6 +110,14 @@ function buildAnswerText(query, answerMeta, results) {
   }
 
   return `The strongest source candidate is ${primaryTitle} [1].`
+}
+
+function buildAnswerHeadline(query, answerMeta) {
+  const answer = normalize(answerMeta?.answer)
+  if (answer && answer.toLowerCase() !== normalize(query).toLowerCase()) {
+    return answer
+  }
+  return 'Memact is checking what may have shaped this.'
 }
 
 function buildActivitySuggestions(search) {
@@ -322,6 +332,7 @@ export default function Search({ extension }) {
   const suggestions = useMemo(() => buildActivitySuggestions(search), [search])
   const emptySuggestionMessage = buildEmptySuggestionMessage(extension, importDecision)
   const status = buildStatus(extension, search, submittedQuery, voiceState)
+  const answerHeadline = buildAnswerHeadline(submittedQuery, search.answerMeta)
   const answerText = buildAnswerText(submittedQuery, search.answerMeta, search.results)
   const bootstrapState = extension?.bootstrap || {}
   const bootstrapStatus = normalize(bootstrapState.status || 'idle').toLowerCase()
@@ -903,7 +914,7 @@ export default function Search({ extension }) {
         <section className="answer-layout" aria-live="polite">
           <article className="answer-card">
             <p className="eyebrow">Answer</p>
-            <blockquote>{submittedQuery}</blockquote>
+            <blockquote>{answerHeadline}</blockquote>
             <div className="answer-copy">
               <MathRichText text={answerText} />
             </div>

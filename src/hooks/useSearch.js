@@ -4,6 +4,8 @@ import { requestCloudExplanation } from '../lib/cloudExplanation'
 const RECENT_SEARCHES_KEY = 'memact.recent-searches'
 const MAX_RECENTS = 10
 const SUGGESTION_LIMIT = 12
+const SEARCH_TIMEOUT_MS = 2200
+const KNOWLEDGE_REFRESH_TIMEOUT_MS = 650
 
 function normalize(value) {
   return String(value || '')
@@ -438,7 +440,7 @@ function resultsFromDeterministicAnalysis(analysis) {
 function buildNoSourceAnswerMeta(query) {
   return {
     overview: `Memact checked captured activity for "${query}".`,
-    answer: query,
+    answer: 'Memact does not have a strong answer yet.',
     summary: 'Memact did not find strong enough sources yet.',
     detailsLabel: 'Evidence around this thought',
     detailItems: [{ label: 'Matches', value: '0' }],
@@ -455,6 +457,16 @@ function hasDeterministicEvidence(analysis, results = []) {
       analysis?.relevantSchemas?.length ||
       analysis?.relevantInfluence?.length
   )
+}
+
+function withTimeout(promise, ms, fallback = null) {
+  return new Promise((resolve) => {
+    const timer = window.setTimeout(() => resolve(fallback), ms)
+    Promise.resolve(promise)
+      .then((value) => resolve(value))
+      .catch(() => resolve(fallback))
+      .finally(() => window.clearTimeout(timer))
+  })
 }
 
 export function useSearch(extension, activeTimeFilter = null) {
@@ -675,10 +687,27 @@ export function useSearch(extension, activeTimeFilter = null) {
       }
 
       try {
-        let response = await extension.search(normalized, 20)
+        const instantAnalysis = extension?.analyzeThought?.(normalized)
+        const instantResults = resultsFromDeterministicAnalysis(instantAnalysis)
+        const instantAnswerMeta = normalizeAnswerMeta(instantAnalysis?.answer)
+
+        if (!cached && (instantAnswerMeta || instantResults.length)) {
+          setAnswerMeta(instantAnswerMeta || buildNoSourceAnswerMeta(normalized))
+          setResults(instantResults)
+        }
+
+        let response = await withTimeout(
+          extension.search(normalized, 12, SEARCH_TIMEOUT_MS),
+          SEARCH_TIMEOUT_MS,
+          null
+        )
         let refreshedKnowledge = null
         if (!response || response.error) {
-          refreshedKnowledge = await extension.refreshKnowledge?.().catch(() => null)
+          refreshedKnowledge = await withTimeout(
+            extension.refreshKnowledge?.(),
+            KNOWLEDGE_REFRESH_TIMEOUT_MS,
+            null
+          )
           response = null
         }
 
@@ -690,6 +719,7 @@ export function useSearch(extension, activeTimeFilter = null) {
 
         const deterministicAnalysis =
           (refreshedKnowledge ? extension?.analyzeThought?.(normalized, refreshedKnowledge) : null) ||
+          instantAnalysis ||
           extension?.analyzeThought?.(normalized)
         const deterministicResults = resultsFromDeterministicAnalysis(deterministicAnalysis)
         const normalizedResults = items.length
@@ -745,7 +775,11 @@ export function useSearch(extension, activeTimeFilter = null) {
 
         return normalizedResults
       } catch (err) {
-        const refreshedKnowledge = await extension.refreshKnowledge?.().catch(() => null)
+        const refreshedKnowledge = await withTimeout(
+          extension.refreshKnowledge?.(),
+          KNOWLEDGE_REFRESH_TIMEOUT_MS,
+          null
+        )
         const deterministicAnalysis =
           (refreshedKnowledge ? extension?.analyzeThought?.(normalized, refreshedKnowledge) : null) ||
           extension?.analyzeThought?.(normalized)

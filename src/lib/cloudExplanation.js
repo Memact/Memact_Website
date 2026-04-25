@@ -1,6 +1,7 @@
 const MAX_SOURCES = 4
 const MAX_SCHEMA_SIGNALS = 3
 const MAX_INFLUENCE_SIGNALS = 3
+const CLOUD_TIMEOUT_MS = 1800
 
 function normalize(value, maxLength = 0) {
   const text = String(value || '')
@@ -141,7 +142,7 @@ export async function requestCloudExplanation({ query, explanation, answerMeta, 
 
   const payload = buildPayload({ query, explanation, answerMeta, results })
   const controller = new AbortController()
-  const timer = window.setTimeout(() => controller.abort(), 9000)
+  const timer = window.setTimeout(() => controller.abort(), CLOUD_TIMEOUT_MS)
 
   try {
     const response = await fetch(endpoint, {

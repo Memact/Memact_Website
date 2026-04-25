@@ -139,6 +139,65 @@ function buildOriginSummary(query, origin) {
   return `Memact found a strong source candidate around ${source}.`
 }
 
+function sourceLabel(candidate) {
+  return normalize(candidate?.sources?.[0]?.title || candidate?.sources?.[0]?.domain || candidate?.source_label)
+}
+
+function buildAnswerHeadline(query, origin, relevantSchemas, relevantChains) {
+  const primaryOrigin = origin.candidates?.[0]
+  const primarySchema = relevantSchemas?.[0]
+  const primaryChain = relevantChains?.[0]
+  const source = sourceLabel(primaryOrigin)
+  const schema = normalize(primarySchema?.label || primarySchema?.id).toLowerCase()
+
+  if (source && schema) {
+    return `This thought appears connected to ${source} and repeated ${schema} activity.`
+  }
+
+  if (source) {
+    return `This thought appears connected to ${source}.`
+  }
+
+  if (schema) {
+    return `This thought appears connected to a repeated ${schema} pattern.`
+  }
+
+  if (primaryChain) {
+    const from = normalize(primaryChain.from_human_label || primaryChain.from_label || primaryChain.from).toLowerCase()
+    const to = normalize(primaryChain.to_human_label || primaryChain.to_label || primaryChain.to).toLowerCase()
+    if (from && to) {
+      return `This thought appears near a repeated move from ${from} toward ${to}.`
+    }
+  }
+
+  return `Memact does not have a strong answer for "${query}" yet.`
+}
+
+function buildAnswerSummary(query, origin, relevantSchemas, relevantChains) {
+  const primaryOrigin = origin.candidates?.[0]
+  const source = sourceLabel(primaryOrigin)
+  const matchedTerms = Number(primaryOrigin?.overlapping_terms?.length || primaryOrigin?.token_overlap || 0)
+  const schemaSummary = buildSchemaSummary(relevantSchemas)
+  const influenceSummary = buildInfluenceSummary(relevantChains)
+
+  if (!source && !schemaSummary && !influenceSummary) {
+    return 'There is not enough captured evidence yet to explain this thought clearly.'
+  }
+
+  const parts = []
+  if (source) {
+    parts.push(`The strongest match is ${source}${matchedTerms ? ` (${matchedTerms} matched term${matchedTerms === 1 ? '' : 's'})` : ''}.`)
+  }
+  if (schemaSummary) {
+    parts.push(schemaSummary)
+  }
+  if (influenceSummary) {
+    parts.push(influenceSummary)
+  }
+
+  return parts.join(' ')
+}
+
 function buildInfluenceSummary(relevantChains) {
   const primary = relevantChains[0]
   if (!primary) {
@@ -248,15 +307,8 @@ export function analyzeThoughtQuery(query, knowledge) {
   const relevantSchemas = relevantSchemaSignals(origin, knowledge.schema || {})
   const relevantInfluence = relevantInfluenceSignals(normalizedQuery, origin, knowledge.influence || {})
 
-  const summaryParts = [
-    buildOriginSummary(normalizedQuery, origin),
-    buildInfluenceSummary(relevantInfluence),
-    buildSchemaSummary(relevantSchemas),
-  ].filter(Boolean)
-
-  const summary =
-    summaryParts.join(' ') ||
-    'Memact did not find enough repeated evidence yet to explain this thought clearly.'
+  const answerHeadline = buildAnswerHeadline(normalizedQuery, origin, relevantSchemas, relevantInfluence)
+  const summary = buildAnswerSummary(normalizedQuery, origin, relevantSchemas, relevantInfluence)
 
   const detailItems = [
     { label: 'Origin matches', value: String(origin.candidates?.length || 0) },
@@ -272,9 +324,9 @@ export function analyzeThoughtQuery(query, knowledge) {
 
   const answer = {
     overview: origin.candidates?.length
-      ? `Memact found source candidates around "${normalizedQuery}".`
+      ? `Memact found matching sources around "${normalizedQuery}".`
       : `Memact checked captured activity for "${normalizedQuery}".`,
-    answer: normalizedQuery,
+    answer: answerHeadline,
     summary,
     detailsLabel: 'Evidence around this thought',
     detailItems,

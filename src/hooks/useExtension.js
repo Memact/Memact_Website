@@ -233,11 +233,11 @@ export function useExtension() {
     }
   }, [sendWithRetry, supportsBridge])
 
-  const search = useCallback((query, limit = 20) => {
+  const search = useCallback((query, limit = 20, timeoutMs = 3200) => {
     if (useWebFallback && !bridgeDetected) {
       return webMemorySearch(query, limit, environment)
     }
-    return sendToExtension('MEMACT_SEARCH', { query, limit })
+    return sendToExtension('MEMACT_SEARCH', { query, limit }, timeoutMs)
   }, [bridgeDetected, environment, sendToExtension, useWebFallback])
 
   const getSuggestions = useCallback((query = '', timeFilter = null, limit = 6) => {
