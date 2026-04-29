@@ -1355,32 +1355,34 @@ export default function Search({ extension }) {
           mode={inputMode}
           onChange={switchInputMode}
         />
-        {!hasSubmitted ? (
+        {!hasSubmitted && inputMode === 'prompt' ? (
           <p className="thought-prompt">{thoughtPrompt}</p>
         ) : null}
-        {inputMode === 'survey' && !hasSubmitted ? (
-          contextSeedQuery ? (
-            <ContextQuestionsPanel
-              title={contextRound > 0 ? 'Go one level deeper.' : 'Help Memact connect this better.'}
-              body={`"${contextSeedQuery}" needs a little more context before Memact checks your activity.`}
-              questions={contextQuestions}
-              answers={contextAnswers}
-              disabled={isBackgroundProcessing || search.loading}
-              onSelect={selectContextAnswer}
-              onSubmit={submitContextQuestions}
-            />
-          ) : (
-            <SurveyPanel
-              deck={surveyDeck}
-              step={surveyStep}
-              answers={surveyAnswers}
-              disabled={isBackgroundProcessing || search.loading}
-              onSelect={selectSurveyAnswer}
-              onBack={() => setSurveyStep((current) => Math.max(0, current - 1))}
-              onNext={() => setSurveyStep((current) => Math.min(surveyDeck.questions.length - 1, current + 1))}
-              onSubmit={submitSurvey}
-            />
-          )
+        {inputMode === 'survey' ? (
+          !hasSubmitted ? (
+            contextSeedQuery ? (
+              <ContextQuestionsPanel
+                title={contextRound > 0 ? 'Go one level deeper.' : 'Help Memact connect this better.'}
+                body={`"${contextSeedQuery}" needs a little more context before Memact checks your activity.`}
+                questions={contextQuestions}
+                answers={contextAnswers}
+                disabled={isBackgroundProcessing || search.loading}
+                onSelect={selectContextAnswer}
+                onSubmit={submitContextQuestions}
+              />
+            ) : (
+              <SurveyPanel
+                deck={surveyDeck}
+                step={surveyStep}
+                answers={surveyAnswers}
+                disabled={isBackgroundProcessing || search.loading}
+                onSelect={selectSurveyAnswer}
+                onBack={() => setSurveyStep((current) => Math.max(0, current - 1))}
+                onNext={() => setSurveyStep((current) => Math.min(surveyDeck.questions.length - 1, current + 1))}
+                onSubmit={submitSurvey}
+              />
+            )
+          ) : null
         ) : (
           <SearchBar
             value={search.query}
@@ -1395,7 +1397,7 @@ export default function Search({ extension }) {
             }}
             onInteraction={requestSetupPrompt}
             onVoiceStateChange={setVoiceState}
-            placeholder={inputMode === 'survey' ? ['Survey generated thought'] : EXAMPLE_PLACEHOLDERS}
+            placeholder={EXAMPLE_PLACEHOLDERS}
             loading={search.loading}
             disabled={isBackgroundProcessing}
             suggestions={suggestions}
