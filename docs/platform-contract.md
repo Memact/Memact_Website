@@ -13,7 +13,7 @@ Capture -> Inference -> Schema -> Memory -> Website Client -> Influence / Origin
 
 The Website client is only one surface.
 Android should become another surface over the same contracts.
-An API explanation layer may produce the short answer, but only from virtual cognitive-schema memory and evidence that deterministic engines already selected.
+An API explanation layer may produce the short answer, but only from Memory's RAG context: virtual cognitive-schema memory first, supporting memories second, and selected source evidence only.
 
 ## Runtime Context
 
@@ -131,6 +131,11 @@ An API can consume `apiExplanationRequest` for a short Gemini answer without rec
     "origin_sources": [],
     "schema_signals": [],
     "cognitive_schema_memories": [],
+    "rag_context": {
+      "contract": "memact.rag_context",
+      "context_items": [],
+      "sources": []
+    },
     "influence_signals": []
   },
   "stats": {}
@@ -141,6 +146,16 @@ Gemini can write the short answer only after deterministic evidence exists.
 The API receives selected cognitive-schema memories, origin sources, schema signals, influence signals, counts, and compact source summaries.
 It must not receive the full Capture snapshot, full page text, screenshots, or unrelated activity.
 If evidence is weak, the API must say that plainly.
+
+## Memory Storage Boundary
+
+Memory is storage-agnostic. Clients can load/save the same memory store from local files, extension storage, Google Drive, Supabase, S3, or another user-controlled backend through the Memory repository adapter.
+
+Storage connectors must follow three rules:
+
+- use Memory CRUD instead of rewriting memory objects directly
+- preserve provenance, actions, and graph links
+- build `memact.rag_context` before sending anything to a cloud model
 
 ## Android Readiness
 
