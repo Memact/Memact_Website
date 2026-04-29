@@ -107,6 +107,14 @@ function cleanExplanationRequest(explanationRequest = {}) {
         id: normalize(item?.id, 120),
         label: normalize(item?.label, 140),
         summary: normalize(item?.summary, 220),
+        core_interpretation: normalize(item?.core_interpretation, 220),
+        action_tendency: normalize(item?.action_tendency, 180),
+        emotional_signature: compactArray(item?.emotional_signature, 5)
+          .map((value) => normalize(value, 50))
+          .filter(Boolean),
+        marker_categories: compactArray(item?.marker_categories, 5)
+          .map((value) => normalize(value, 40))
+          .filter(Boolean),
         strength: Number(item?.strength || 0),
         retrieval_score: Number(item?.retrieval_score || 0),
         support: Number(item?.support || 0),

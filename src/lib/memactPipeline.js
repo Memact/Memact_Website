@@ -155,11 +155,11 @@ function buildAnswerHeadline(query, cognitiveSchemas, origin, relevantSchemas, r
   const schema = normalize(primaryCognitiveSchema?.label || primarySchema?.label || primarySchema?.id).toLowerCase()
 
   if (primaryCognitiveSchema && source) {
-    return `This thought appears to be passing through your ${schema}.`
+    return `This thought maps to a ${schema} in your memory.`
   }
 
   if (primaryCognitiveSchema) {
-    return `This thought appears to be passing through your ${schema}.`
+    return `This thought maps to a ${schema} in your memory.`
   }
 
   if (source && schema) {
@@ -199,9 +199,17 @@ function buildAnswerSummary(query, cognitiveSchemas, origin, relevantSchemas, re
 
   const parts = []
   if (primaryCognitiveSchema) {
-    parts.push(
-      `Memact retrieved this virtual cognitive schema from memory because it matches the thought and has strength ${Number(primaryCognitiveSchema.strength || 0).toFixed(2)}.`
-    )
+    const frame = normalize(primaryCognitiveSchema.core_interpretation)
+    const action = normalize(primaryCognitiveSchema.action_tendency)
+    if (frame) {
+      parts.push(`Memact found a repeated frame: ${frame}`)
+    } else {
+      parts.push(`Memact found a repeated virtual schema in memory.`)
+    }
+    if (action) {
+      parts.push(`It often points toward this kind of action: ${action}.`)
+    }
+    parts.push(`${Number(primaryCognitiveSchema.support || 0)} evidence packet${Number(primaryCognitiveSchema.support || 0) === 1 ? '' : 's'} support it.`)
   }
   if (source) {
     parts.push(`The strongest source behind it is ${source}${matchedTerms ? ` (${matchedTerms} matched term${matchedTerms === 1 ? '' : 's'})` : ''}.`)
@@ -388,6 +396,10 @@ export function analyzeThoughtQuery(query, knowledge) {
       strength: schema.strength,
       retrieval_score: schema.retrieval_score,
       support: schema.support,
+      core_interpretation: schema.core_interpretation,
+      action_tendency: schema.action_tendency,
+      emotional_signature: schema.emotional_signature,
+      marker_categories: schema.marker_categories,
     })),
     memorySignals: relevantMemories.map((memory) => ({
       id: memory.id,

@@ -8,12 +8,12 @@ Website, Android, and future APIs should all use the same evidence shapes.
 ## Flow
 
 ```text
-Capture -> Inference -> Schema -> Website Client -> Influence / Origin -> Explanation
+Capture -> Inference -> Schema -> Memory -> Website Client -> Influence / Origin -> Explanation
 ```
 
 The Website client is only one surface.
 Android should become another surface over the same contracts.
-An API explanation layer may produce the short answer, but only from evidence that deterministic engines already selected.
+An API explanation layer may produce the short answer, but only from virtual cognitive-schema memory and evidence that deterministic engines already selected.
 
 ## Runtime Context
 
@@ -65,6 +65,7 @@ It keeps raw evidence and derived layers together without hiding what came from 
   "snapshot": {},
   "inference": {},
   "schema": {},
+  "memory": {},
   "influence": {},
   "suggestionSeed": [],
   "stats": {
@@ -72,6 +73,7 @@ It keeps raw evidence and derived layers together without hiding what came from 
     "activityCount": 0,
     "sessionCount": 0,
     "schemaCount": 0,
+    "memoryCount": 0,
     "influenceCount": 0
   }
 }
@@ -80,7 +82,8 @@ It keeps raw evidence and derived layers together without hiding what came from 
 Rules:
 
 - `snapshot` must come from Capture's public snapshot contract.
-- `inference`, `schema`, and `influence` must be deterministic outputs.
+- `inference`, `schema`, `memory`, and `influence` must be deterministic outputs.
+- Retrieval should start from `cognitive_schema_memory`, then use source/origin/influence evidence as support.
 - No client should read Capture internals directly.
 - No explanation layer should invent sources.
 
@@ -97,6 +100,7 @@ Rules:
   "answer": {},
   "origin": {},
   "relevantSchemas": [],
+  "relevantCognitiveSchemas": [],
   "relevantInfluence": [],
   "apiExplanationRequest": {}
 }
@@ -126,6 +130,7 @@ An API can consume `apiExplanationRequest` for a short Gemini answer without rec
   "evidence": {
     "origin_sources": [],
     "schema_signals": [],
+    "cognitive_schema_memories": [],
     "influence_signals": []
   },
   "stats": {}
@@ -133,7 +138,7 @@ An API can consume `apiExplanationRequest` for a short Gemini answer without rec
 ```
 
 Gemini can write the short answer only after deterministic evidence exists.
-The API receives selected origin sources, schema signals, influence signals, counts, and compact source summaries.
+The API receives selected cognitive-schema memories, origin sources, schema signals, influence signals, counts, and compact source summaries.
 It must not receive the full Capture snapshot, full page text, screenshots, or unrelated activity.
 If evidence is weak, the API must say that plainly.
 

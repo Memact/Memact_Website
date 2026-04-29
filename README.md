@@ -2,11 +2,11 @@
 
 Version: `v0.0`
 
-Memact helps you see where your thoughts may be coming from.
+Memact is a mirror for the virtual cognitive schemas forming from your digital life.
 
 You type a thought.
 Memact looks at what you read, watch, search, and revisit.
-Then it shows links that may have shaped that thought.
+Then it shows the repeated frames, sources, origins, and influences that may be shaping it.
 
 Why this matters:
 
@@ -18,7 +18,7 @@ Why this matters:
 ## How Memact Works
 
 ```text
-Capture -> Inference -> Schema -> Website -> Influence / Origin
+Capture -> Inference -> Schema -> Memory -> Website -> Influence / Origin
 ```
 
 - `Capture`
@@ -26,7 +26,9 @@ Capture -> Inference -> Schema -> Website -> Influence / Origin
 - `Inference`
   Finds the main meaning in that activity.
 - `Schema`
-  Notices patterns that keep repeating.
+  Forms virtual cognitive schemas from repeated meaningful activity.
+- `Memory`
+  Stores the schema packets that should survive across future interactions.
 - `Website`
   Lets you type a thought and see the result.
 - `Influence`
@@ -47,7 +49,7 @@ docs/platform-contract.md
 
 The important rule is simple:
 Memact first filters captured activity into meaningful packets through Inference.
-Memory mirrors potential cognitive schemas as virtual schema memories.
+Memory stores potential cognitive schemas as virtual schema memories.
 Query retrieval starts from those virtual cognitive schemas, then uses activity/source packets as evidence.
 Dynamic memory actions reinforce, weaken, link, or forget those schema memories over time, closer to how mental frames change with repeated experience.
 Schema, Origin, and Influence work from retained memory instead of raw browsing noise.
