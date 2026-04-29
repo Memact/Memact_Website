@@ -97,6 +97,7 @@ function hasEvidence(payload = {}) {
     compact.sources.length ||
       evidence.origin_sources?.length ||
       evidence.memory_signals?.length ||
+      evidence.cognitive_schema_memories?.length ||
       evidence.schema_signals?.length ||
       evidence.influence_signals?.length
   )

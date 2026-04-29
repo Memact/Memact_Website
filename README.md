@@ -47,8 +47,10 @@ docs/platform-contract.md
 
 The important rule is simple:
 Memact first filters captured activity into meaningful packets through Inference.
-Memory decides which meaning packets and virtual schema packets survive across future interactions.
-Schema, Origin, and Influence work from that retained memory instead of raw browsing noise.
+Memory mirrors potential cognitive schemas as virtual schema memories.
+Query retrieval starts from those virtual cognitive schemas, then uses activity/source packets as evidence.
+Dynamic memory actions reinforce, weaken, link, or forget those schema memories over time, closer to how mental frames change with repeated experience.
+Schema, Origin, and Influence work from retained memory instead of raw browsing noise.
 Gemini can answer from a small evidence packet, but the evidence must already come from deterministic Memact engines.
 Memact sends only the query, selected schema/origin/influence signals, and a few source summaries, not the full Capture snapshot.
 

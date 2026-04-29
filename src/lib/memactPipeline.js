@@ -1,5 +1,5 @@
 import { analyzeCaptureSnapshot } from "../../../inference/src/engine.mjs"
-import { buildMemoryStore, retrieveMemories } from "../../../memory/src/engine.mjs"
+import { buildMemoryStore, retrieveCognitiveSchemas, retrieveMemories } from "../../../memory/src/engine.mjs"
 import { detectSchemas } from "../../../schema/src/engine.mjs"
 import { detectOriginCandidates } from "../../../origin/src/engine.mjs"
 import { analyzeInfluenceSnapshot } from "../../../influence/src/engine.mjs"
@@ -146,12 +146,21 @@ function sourceLabel(candidate) {
   return normalize(candidate?.sources?.[0]?.title || candidate?.sources?.[0]?.domain || candidate?.source_label)
 }
 
-function buildAnswerHeadline(query, origin, relevantSchemas, relevantChains) {
+function buildAnswerHeadline(query, cognitiveSchemas, origin, relevantSchemas, relevantChains) {
+  const primaryCognitiveSchema = cognitiveSchemas?.[0]
   const primaryOrigin = origin.candidates?.[0]
   const primarySchema = relevantSchemas?.[0]
   const primaryChain = relevantChains?.[0]
   const source = sourceLabel(primaryOrigin)
-  const schema = normalize(primarySchema?.label || primarySchema?.id).toLowerCase()
+  const schema = normalize(primaryCognitiveSchema?.label || primarySchema?.label || primarySchema?.id).toLowerCase()
+
+  if (primaryCognitiveSchema && source) {
+    return `This thought appears to be passing through your ${schema}.`
+  }
+
+  if (primaryCognitiveSchema) {
+    return `This thought appears to be passing through your ${schema}.`
+  }
 
   if (source && schema) {
     return `This thought appears connected to ${source} and repeated ${schema} activity.`
@@ -176,20 +185,26 @@ function buildAnswerHeadline(query, origin, relevantSchemas, relevantChains) {
   return `Memact does not have a strong answer for "${query}" yet.`
 }
 
-function buildAnswerSummary(query, origin, relevantSchemas, relevantChains) {
+function buildAnswerSummary(query, cognitiveSchemas, origin, relevantSchemas, relevantChains) {
+  const primaryCognitiveSchema = cognitiveSchemas?.[0]
   const primaryOrigin = origin.candidates?.[0]
   const source = sourceLabel(primaryOrigin)
   const matchedTerms = Number(primaryOrigin?.overlapping_terms?.length || primaryOrigin?.token_overlap || 0)
   const schemaSummary = buildSchemaSummary(relevantSchemas)
   const influenceSummary = buildInfluenceSummary(relevantChains)
 
-  if (!source && !schemaSummary && !influenceSummary) {
+  if (!primaryCognitiveSchema && !source && !schemaSummary && !influenceSummary) {
     return 'There is not enough captured evidence yet to explain this thought clearly.'
   }
 
   const parts = []
+  if (primaryCognitiveSchema) {
+    parts.push(
+      `Memact retrieved this virtual cognitive schema from memory because it matches the thought and has strength ${Number(primaryCognitiveSchema.strength || 0).toFixed(2)}.`
+    )
+  }
   if (source) {
-    parts.push(`The strongest match is ${source}${matchedTerms ? ` (${matchedTerms} matched term${matchedTerms === 1 ? '' : 's'})` : ''}.`)
+    parts.push(`The strongest source behind it is ${source}${matchedTerms ? ` (${matchedTerms} matched term${matchedTerms === 1 ? '' : 's'})` : ''}.`)
   }
   if (schemaSummary) {
     parts.push(schemaSummary)
@@ -275,6 +290,13 @@ function relevantMemorySignals(query, knowledge) {
   })
 }
 
+function relevantCognitiveSchemas(query, knowledge) {
+  return retrieveCognitiveSchemas(query, knowledge.memory || {}, {
+    top: 3,
+    minScore: 0.12,
+  })
+}
+
 function relevantInfluenceSignals(query, origin, influenceResult) {
   const themeSet = new Set((origin.candidates || []).flatMap((candidate) => candidate.canonical_themes || []))
   const queryTokens = new Set(tokenize(query))
@@ -315,21 +337,23 @@ export function analyzeThoughtQuery(query, knowledge) {
     minimumMeaningfulScore: 0.38,
     top: 4,
   })
+  const cognitiveSchemas = relevantCognitiveSchemas(normalizedQuery, knowledge)
   const relevantMemories = relevantMemorySignals(normalizedQuery, knowledge)
   const relevantSchemas = relevantSchemaSignals(origin, knowledge.schema || {})
   const relevantInfluence = relevantInfluenceSignals(normalizedQuery, origin, knowledge.influence || {})
 
-  const answerHeadline = buildAnswerHeadline(normalizedQuery, origin, relevantSchemas, relevantInfluence)
-  const summary = buildAnswerSummary(normalizedQuery, origin, relevantSchemas, relevantInfluence)
+  const answerHeadline = buildAnswerHeadline(normalizedQuery, cognitiveSchemas, origin, relevantSchemas, relevantInfluence)
+  const summary = buildAnswerSummary(normalizedQuery, cognitiveSchemas, origin, relevantSchemas, relevantInfluence)
 
   const detailItems = [
     { label: 'Origin matches', value: String(origin.candidates?.length || 0) },
-    { label: 'Schema signals', value: String(relevantSchemas.length) },
+    { label: 'Cognitive schemas', value: String(cognitiveSchemas.length) },
     { label: 'Influence patterns', value: String(relevantInfluence.length) },
     { label: 'Memories', value: String(knowledge.stats?.memoryCount || knowledge.memory?.memories?.length || 0) },
   ]
 
   const signals = [
+    ...cognitiveSchemas.map((item) => `${item.label} (virtual schema)`),
     ...relevantSchemas.map((item) => `${item.label} (${item.state_label || 'schema signal'})`),
     ...relevantMemories.slice(0, 2).map((item) => `${item.label} (${item.type})`),
     ...relevantInfluence.map((item) => `${titleCase(item.from)} -> ${titleCase(item.to)} (${item.count})`),
@@ -358,6 +382,13 @@ export function analyzeThoughtQuery(query, knowledge) {
       label: schema.label,
       state: schema.state,
     })),
+    cognitiveSchemaSignals: cognitiveSchemas.map((schema) => ({
+      id: schema.id,
+      label: schema.label,
+      strength: schema.strength,
+      retrieval_score: schema.retrieval_score,
+      support: schema.support,
+    })),
     memorySignals: relevantMemories.map((memory) => ({
       id: memory.id,
       type: memory.type,
@@ -376,6 +407,7 @@ export function analyzeThoughtQuery(query, knowledge) {
   return {
     origin,
     relevantSchemas,
+    relevantCognitiveSchemas: cognitiveSchemas,
     relevantMemories,
     relevantInfluence,
     answer,
@@ -383,6 +415,7 @@ export function analyzeThoughtQuery(query, knowledge) {
       query: normalizedQuery,
       origin,
       relevantSchemas,
+      relevantCognitiveSchemas: cognitiveSchemas,
       relevantInfluence,
       answer,
       knowledge,

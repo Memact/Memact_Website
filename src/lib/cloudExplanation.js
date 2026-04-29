@@ -103,6 +103,20 @@ function cleanExplanationRequest(explanationRequest = {}) {
           url: normalize(source?.url, 220),
         })),
       })),
+      cognitive_schema_memories: compactArray(evidence.cognitive_schema_memories, MAX_SCHEMA_SIGNALS).map((item) => ({
+        id: normalize(item?.id, 120),
+        label: normalize(item?.label, 140),
+        summary: normalize(item?.summary, 220),
+        strength: Number(item?.strength || 0),
+        retrieval_score: Number(item?.retrieval_score || 0),
+        support: Number(item?.support || 0),
+        themes: compactArray(item?.themes, 8)
+          .map((theme) => normalize(theme, 40))
+          .filter(Boolean),
+        evidence_packet_ids: compactArray(item?.evidence_packet_ids, 8)
+          .map((id) => normalize(id, 80))
+          .filter(Boolean),
+      })),
       influence_signals: compactArray(evidence.influence_signals, MAX_INFLUENCE_SIGNALS).map((chain) => ({
         from: normalize(chain?.from, 80),
         to: normalize(chain?.to, 80),
