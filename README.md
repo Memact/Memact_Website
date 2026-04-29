@@ -6,7 +6,7 @@ Memact is a mirror for the virtual cognitive schemas forming from your digital l
 
 You type a thought.
 Memact looks at what you read, watch, search, and revisit.
-Then it shows the repeated frames, sources, origins, and influences that may be shaping it.
+Then it shows the links, first clues, and repeated activity that may be shaping it.
 
 Why this matters:
 
@@ -45,7 +45,9 @@ Website has two input modes:
 - `Survey`
   Answer a short guided flow when the thought is still vague.
 
-Survey Mode builds its questions from existing schema memories, schema packets, influence chains, and activity themes. If there is no activity yet, it says so and uses broad starter areas such as research, decisions, ideas, projects, and feelings. A completed survey creates a local `survey_response` packet with nodes and edges, then turns that packet into a deterministic query for the same Memact answer flow.
+Survey Mode builds its questions from what Memact already knows about the user's activity. If there is no activity yet, it says so and uses broad starter areas such as research, decisions, ideas, projects, and feelings. A completed survey creates a private local memory note, then turns that note into a deterministic query.
+
+Survey results do not pretend every answer has source links. If Memact has links, it shows them. If not, it shows a simple thought map and keeps the survey choice as something to check against future activity.
 
 ## Infrastructure Contract
 

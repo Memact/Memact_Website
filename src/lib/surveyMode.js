@@ -1,11 +1,11 @@
 const SURVEY_PACKET_KEY = 'memact.survey-packets'
 
 const DEFAULT_TOPICS = [
-  { id: 'research', label: 'Research direction', source: 'broad' },
-  { id: 'decision', label: 'A decision', source: 'broad' },
-  { id: 'idea', label: 'An idea', source: 'broad' },
-  { id: 'project', label: 'A project', source: 'broad' },
-  { id: 'feeling', label: 'A feeling', source: 'broad' },
+  { id: 'research', label: 'Research direction', source: 'starter' },
+  { id: 'decision', label: 'A decision', source: 'starter' },
+  { id: 'idea', label: 'An idea', source: 'starter' },
+  { id: 'project', label: 'A project', source: 'starter' },
+  { id: 'feeling', label: 'A feeling', source: 'starter' },
 ]
 
 const INTENT_OPTIONS = [
@@ -42,11 +42,11 @@ const INTENT_OPTIONS = [
 ]
 
 const EVIDENCE_OPTIONS = [
-  { id: 'sources', label: 'Sources', relation: 'evidenced_by' },
-  { id: 'schemas', label: 'Schemas', relation: 'mapped_to_schema' },
-  { id: 'patterns', label: 'Patterns', relation: 'patterned_by' },
-  { id: 'contrasts', label: 'Contrasts', relation: 'contrasted_with' },
-  { id: 'new_signal', label: 'New info', relation: 'self_reported' },
+  { id: 'sources', label: 'Source links', relation: 'evidenced_by' },
+  { id: 'schemas', label: 'Thinking frames', relation: 'mapped_to_schema' },
+  { id: 'patterns', label: 'Repeated activity', relation: 'patterned_by' },
+  { id: 'contrasts', label: 'Different angles', relation: 'contrasted_with' },
+  { id: 'new_signal', label: 'New clue', relation: 'self_reported' },
 ]
 
 function normalize(value, maxLength = 0) {
@@ -90,6 +90,14 @@ function compactSourceLabel(source = {}) {
   return normalize(source.title || source.domain || source.url)
 }
 
+function friendlySourceLabel(source) {
+  const value = normalize(source).toLowerCase()
+  if (value === 'schema memory' || value === 'schema') return 'memory'
+  if (value === 'pattern' || value === 'influence') return 'repeated activity'
+  if (value === 'source') return 'link'
+  return normalize(source) || 'activity'
+}
+
 function collectTopicOptions(knowledge = {}) {
   const schemaMemories = Array.isArray(knowledge.memory?.schema_packets)
     ? knowledge.memory.schema_packets
@@ -108,19 +116,19 @@ function collectTopicOptions(knowledge = {}) {
     ...schemaMemories.map((schema) => ({
       id: schema.id,
       label: schema.label,
-      source: 'schema memory',
+      source: friendlySourceLabel('schema memory'),
       summary: schema.core_interpretation || schema.summary,
     })),
     ...schemas.map((schema) => ({
       id: schema.id,
       label: schema.label || schema.id,
-      source: 'schema',
+      source: friendlySourceLabel('schema'),
       summary: schema.summary || schema.state_label,
     })),
     ...influence.map((chain) => ({
       id: `${chain.from}-${chain.to}`,
       label: normalize(chain.to_human_label || chain.to_label || chain.to || chain.from_human_label || chain.from_label || chain.from),
-      source: 'pattern',
+      source: friendlySourceLabel('pattern'),
       summary: chain.summary,
     })),
     ...records.flatMap((record) => (record.canonical_themes || []).map((theme) => ({
@@ -146,15 +154,15 @@ function collectEvidenceOptions(knowledge = {}) {
     sources.map((source) => ({
       id: source.url || source.domain || source.title,
       label: compactSourceLabel(source),
-      source: 'source',
+      source: friendlySourceLabel('source'),
       relation: 'evidenced_by',
     })),
     2
   )
 
   const dynamic = [
-    schemaCount ? { id: 'schemas', label: 'Schemas', relation: 'mapped_to_schema', source: 'memory' } : null,
-    influenceCount ? { id: 'patterns', label: 'Patterns', relation: 'patterned_by', source: 'influence' } : null,
+    schemaCount ? { id: 'schemas', label: 'Thinking frames', relation: 'mapped_to_schema', source: 'memory' } : null,
+    influenceCount ? { id: 'patterns', label: 'Repeated activity', relation: 'patterned_by', source: friendlySourceLabel('influence') } : null,
     ...sourceOptions,
   ].filter(Boolean)
 
@@ -175,19 +183,19 @@ export function buildSurveyDeck(knowledge = {}) {
       {
         id: 'topic',
         eyebrow: '1 / 3',
-        title: 'Choose the area.',
+        title: 'What should Memact look at?',
         options: topicOptions.length ? topicOptions : DEFAULT_TOPICS,
       },
       {
         id: 'intent',
         eyebrow: '2 / 3',
-        title: 'Choose the question.',
+        title: 'What do you want to understand?',
         options: INTENT_OPTIONS,
       },
       {
         id: 'evidence',
         eyebrow: '3 / 3',
-        title: 'Choose what to check.',
+        title: 'What should Memact check first?',
         options: collectEvidenceOptions(knowledge),
       },
     ],

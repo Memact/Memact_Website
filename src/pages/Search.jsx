@@ -87,7 +87,7 @@ function buildStatus(extension, search, submittedQuery, voiceState) {
   if (submittedQuery && search.results.length) {
     return `Answer backed by ${search.results.length} source${search.results.length === 1 ? '' : 's'}.`
   }
-  if (submittedQuery) return 'No strong source match yet.'
+  if (submittedQuery) return 'No strong links yet.'
   if (extension?.bootstrap?.status === 'complete' && Number(extension?.bootstrap?.imported_count || 0) > 0) {
     return `${extension.bootstrap.imported_count} early activity sources seeded.`
   }
@@ -124,6 +124,53 @@ function buildAnswerHeadline(query, answerMeta) {
     return answer
   }
   return 'Memact is checking what may have shaped this.'
+}
+
+function surveyAnswer(packet, key) {
+  return packet?.answers?.[key] || {}
+}
+
+function surveyLabel(packet, key, fallback = '') {
+  return normalize(surveyAnswer(packet, key).label || fallback)
+}
+
+function buildSurveyHeadline(packet) {
+  const topic = surveyLabel(packet, 'topic', 'this thought')
+  if (!topic) return 'Memact made a starting map.'
+  return `Memact made a starting map for ${topic}.`
+}
+
+function buildSurveyCopy(packet, results) {
+  const topic = surveyLabel(packet, 'topic', 'this area').toLowerCase()
+  const intent = surveyLabel(packet, 'intent', 'what shaped it').toLowerCase()
+  const evidence = surveyLabel(packet, 'evidence', 'the strongest clues').toLowerCase()
+
+  if (results.length) {
+    return `Memact is checking ${topic} through ${intent}. It found ${results.length} useful link${results.length === 1 ? '' : 's'} to start with, with ${evidence} as the first focus.`
+  }
+
+  return `Memact now knows to check ${topic} through ${intent}, with ${evidence} as the first focus. No strong links are attached yet, but this will get clearer as Capture sees more relevant activity.`
+}
+
+function buildSurveyMapItems(packet, results) {
+  return [
+    {
+      label: 'Area',
+      value: surveyLabel(packet, 'topic', 'Not selected'),
+    },
+    {
+      label: 'Question',
+      value: surveyLabel(packet, 'intent', 'What shaped it'),
+    },
+    {
+      label: 'First check',
+      value: surveyLabel(packet, 'evidence', 'Useful clues'),
+    },
+    {
+      label: 'Links',
+      value: results.length ? `${results.length} found` : 'Not enough yet',
+    },
+  ]
 }
 
 function buildActivitySuggestions(search) {
@@ -1049,37 +1096,68 @@ export default function Search({ extension }) {
       </section>
 
       {hasSubmitted ? (
-        <section className="answer-layout" aria-live="polite">
-          <article className="answer-card">
-            <p className="eyebrow">Answer</p>
-            <blockquote>{answerHeadline}</blockquote>
-            <div className="answer-copy">
-              <MathRichText text={answerText} />
-            </div>
-            {lastSurveyPacket ? (
-              <div className="survey-packet-preview" aria-label="Survey packet">
-                <span>Survey packet</span>
-                <span>{lastSurveyPacket.nodes.length} nodes</span>
-                <span>{lastSurveyPacket.edges.length} edges</span>
+        lastSurveyPacket ? (
+          <section className="answer-layout answer-layout--survey" aria-live="polite">
+            <article className="answer-card answer-card--survey">
+              <p className="eyebrow">Thought map</p>
+              <blockquote>{buildSurveyHeadline(lastSurveyPacket)}</blockquote>
+              <div className="answer-copy">
+                <MathRichText text={buildSurveyCopy(lastSurveyPacket, search.results)} />
               </div>
-            ) : null}
-          </article>
-
-          <section className="source-panel" aria-label="Sources">
-            <p className="eyebrow">Sources</p>
-            {search.results.length ? (
-              <div className="source-list">
-                {search.results.slice(0, 4).map((result, index) => (
-                  <SourceCard key={result.id} result={result} index={index} />
+              <div className="survey-map-grid" aria-label="Survey result map">
+                {buildSurveyMapItems(lastSurveyPacket, search.results).map((item) => (
+                  <p className="survey-map-item" key={item.label}>
+                    <span>{item.label}</span>
+                    <strong>{item.value}</strong>
+                  </p>
                 ))}
               </div>
-            ) : (
-              <div className="empty-sources">
-                No source was strong enough yet.
-              </div>
-            )}
+            </article>
+
+            <section className="source-panel source-panel--survey" aria-label="What Memact found">
+              <p className="eyebrow">What Memact found</p>
+              {search.results.length ? (
+                <div className="source-list">
+                  {search.results.slice(0, 4).map((result, index) => (
+                    <SourceCard key={result.id} result={result} index={index} />
+                  ))}
+                </div>
+              ) : (
+                <div className="survey-empty-state">
+                  <h3>No strong links yet.</h3>
+                  <p>
+                    This is not a failure. The survey saved what to look for, and future activity can make this map stronger.
+                  </p>
+                </div>
+              )}
+            </section>
           </section>
-        </section>
+        ) : (
+          <section className="answer-layout" aria-live="polite">
+            <article className="answer-card">
+              <p className="eyebrow">Answer</p>
+              <blockquote>{answerHeadline}</blockquote>
+              <div className="answer-copy">
+                <MathRichText text={answerText} />
+              </div>
+            </article>
+
+            <section className="source-panel" aria-label="Sources">
+              <p className="eyebrow">Sources</p>
+              {search.results.length ? (
+                <div className="source-list">
+                  {search.results.slice(0, 4).map((result, index) => (
+                    <SourceCard key={result.id} result={result} index={index} />
+                  ))}
+                </div>
+              ) : (
+                <div className="empty-sources">
+                  No strong source link yet.
+                </div>
+              )}
+            </section>
+          </section>
+        )
       ) : null}
 
       {shouldShowProcessingPane ? (
