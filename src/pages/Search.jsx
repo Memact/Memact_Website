@@ -522,6 +522,22 @@ export default function Search({ extension }) {
     setSetupPromptRequested(true)
   }
 
+  const switchInputMode = (nextMode) => {
+    if (nextMode === inputMode) return
+
+    setInputMode(nextMode)
+    setSubmittedQuery('')
+    setLastSurveyPacket(null)
+    setSurveyStep(0)
+    setSurveyAnswers({})
+    setNavigation({ entries: [], index: -1 })
+    setInfoOpen(false)
+    setHistoryOpen(false)
+    setSettingsOpen(false)
+    search.setQuery('')
+    search.clearResults()
+  }
+
   const selectSurveyAnswer = (questionId, option) => {
     requestSetupPrompt()
     setSurveyAnswers((current) => ({
@@ -1033,18 +1049,7 @@ export default function Search({ extension }) {
         <div className="brand-divider" aria-hidden="true" />
         <ModeSwitch
           mode={inputMode}
-          onChange={(nextMode) => {
-            setInputMode(nextMode)
-            setInfoOpen(false)
-            setHistoryOpen(false)
-            setSettingsOpen(false)
-            if (nextMode === 'survey' && hasSubmitted) {
-              setSubmittedQuery('')
-              search.setQuery('')
-              search.clearResults()
-              setNavigation((current) => ({ ...current, index: -1 }))
-            }
-          }}
+          onChange={switchInputMode}
         />
         {!hasSubmitted ? (
           <p className="thought-prompt">{thoughtPrompt}</p>
