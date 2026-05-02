@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { requestCloudExplanation, requestCloudHistoryTitle } from '../lib/cloudExplanation'
 import { applyFeedbackToAnswerMeta } from '../lib/feedbackStore'
+import { verifyAnswerGrounding } from '../lib/groundingVerifier'
 
 const RECENT_SEARCHES_KEY = 'memact.recent-searches'
 const MAX_RECENTS = 10
@@ -955,10 +956,15 @@ export function useSearch(extension, activeTimeFilter = null) {
           : deterministicResults
         const normalizedAnswerMeta = normalizeAnswerMeta(response?.answer)
         const deterministicAnswerMeta = normalizeAnswerMeta(deterministicAnalysis?.answer)
-        const finalAnswerMeta =
+        const finalAnswerMeta = verifyAnswerGrounding(
           deterministicAnswerMeta ||
-          normalizedAnswerMeta ||
-          buildNoSourceAnswerMeta(normalized)
+            normalizedAnswerMeta ||
+            buildNoSourceAnswerMeta(normalized),
+          {
+            results: normalizedResults,
+            explanation: deterministicAnalysis?.explanation,
+          }
+        )
         resultCacheRef.current.set(cacheKey, {
           results: normalizedResults,
           answerMeta: finalAnswerMeta,
@@ -991,9 +997,15 @@ export function useSearch(extension, activeTimeFilter = null) {
 
               return {
                 ...current,
-                overview: structured.overview || current.overview,
-                answer: structured.answer || current.answer,
-                summary: structured.summary || current.summary,
+                ...verifyAnswerGrounding({
+                  ...current,
+                  overview: structured.overview || current.overview,
+                  answer: structured.answer || current.answer,
+                  summary: structured.summary || current.summary,
+                }, {
+                  results: normalizedResults,
+                  explanation: deterministicAnalysis?.explanation,
+                }),
                 answeredByCloudModel: Boolean(structured.applied),
                 cloudProvider: structured.provider,
                 cloudModel: structured.model,
