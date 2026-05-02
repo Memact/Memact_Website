@@ -1,3 +1,4 @@
+import { isCloudAiAllowed } from './localFirstMode.js'
 import { filterCloudPayloadForPrivacy } from './privacyFilter.js'
 
 const MAX_SOURCES = 4
@@ -231,7 +232,7 @@ function normalizeCloudResponse(value) {
 
 export async function requestCloudExplanation({ query, explanation, answerMeta, results }) {
   const endpoint = normalize(import.meta.env.VITE_MEMACT_GEMINI_ENDPOINT)
-  if (!endpoint || !answerMeta) {
+  if (!endpoint || !answerMeta || !isCloudAiAllowed()) {
     return null
   }
 
@@ -316,7 +317,7 @@ export async function requestCloudFollowUpQuestions({
   avoidQuestions = [],
 }) {
   const endpoint = followUpEndpoint()
-  if (!endpoint) {
+  if (!endpoint || !isCloudAiAllowed()) {
     return []
   }
 
@@ -354,7 +355,7 @@ export async function requestCloudHistoryTitle({
   packet = null,
 }) {
   const endpoint = historyTitleEndpoint()
-  if (!endpoint || normalize(mode).toLowerCase() !== 'survey') {
+  if (!endpoint || !isCloudAiAllowed() || normalize(mode).toLowerCase() !== 'survey') {
     return ''
   }
 

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { requestCloudExplanation, requestCloudHistoryTitle } from '../lib/cloudExplanation'
 import { applyFeedbackToAnswerMeta } from '../lib/feedbackStore'
 import { verifyAnswerGrounding } from '../lib/groundingVerifier'
+import { isCloudAiAllowed } from '../lib/localFirstMode'
 
 const RECENT_SEARCHES_KEY = 'memact.recent-searches'
 const MAX_RECENTS = 10
@@ -586,7 +587,7 @@ function isWeakDeterministicAnswer(answerMeta) {
 
 function shouldRequestCloudExplanation(analysis, answerMeta, results = []) {
   const mode = normalize(import.meta.env.VITE_MEMACT_AI_MODE || 'fallback').toLowerCase()
-  if (mode === 'off' || mode === 'local') {
+  if (!isCloudAiAllowed() || mode === 'off' || mode === 'local') {
     return false
   }
 
