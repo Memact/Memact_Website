@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { requestCloudExplanation, requestCloudHistoryTitle } from '../lib/cloudExplanation'
 import { applyFeedbackToAnswerMeta } from '../lib/feedbackStore'
 import { verifyAnswerGrounding } from '../lib/groundingVerifier'
+import { applyHallucinationFirewall } from '../lib/hallucinationFirewall'
 import { isCloudAiAllowed } from '../lib/localFirstMode'
 
 const RECENT_SEARCHES_KEY = 'memact.recent-searches'
@@ -609,6 +610,10 @@ function shouldRequestCloudExplanation(analysis, answerMeta, results = []) {
   return isWeakDeterministicAnswer(answerMeta)
 }
 
+function guardAnswerMeta(answerMeta, context = {}) {
+  return applyHallucinationFirewall(verifyAnswerGrounding(answerMeta, context), context)
+}
+
 function withTimeout(promise, ms, fallback = null) {
   return new Promise((resolve) => {
     const timer = window.setTimeout(() => resolve(fallback), ms)
@@ -957,7 +962,7 @@ export function useSearch(extension, activeTimeFilter = null) {
           : deterministicResults
         const normalizedAnswerMeta = normalizeAnswerMeta(response?.answer)
         const deterministicAnswerMeta = normalizeAnswerMeta(deterministicAnalysis?.answer)
-        const finalAnswerMeta = verifyAnswerGrounding(
+        const finalAnswerMeta = guardAnswerMeta(
           deterministicAnswerMeta ||
             normalizedAnswerMeta ||
             buildNoSourceAnswerMeta(normalized),
@@ -998,7 +1003,7 @@ export function useSearch(extension, activeTimeFilter = null) {
 
               return {
                 ...current,
-                ...verifyAnswerGrounding({
+                ...guardAnswerMeta({
                   ...current,
                   overview: structured.overview || current.overview,
                   answer: structured.answer || current.answer,
@@ -1029,14 +1034,21 @@ export function useSearch(extension, activeTimeFilter = null) {
         const fallbackResults = resultsFromDeterministicAnalysis(deterministicAnalysis)
 
         if (deterministicAnswerMeta || fallbackResults.length) {
+          const guardedFallbackAnswer = guardAnswerMeta(
+            deterministicAnswerMeta || buildNoSourceAnswerMeta(normalized),
+            {
+              results: fallbackResults,
+              explanation: deterministicAnalysis?.explanation,
+            }
+          )
           setError('')
           setResults(fallbackResults)
-          setAnswerMeta(deterministicAnswerMeta)
+          setAnswerMeta(guardedFallbackAnswer)
           resultCacheRef.current.set(cacheKey, {
             results: fallbackResults,
-            answerMeta: deterministicAnswerMeta,
+            answerMeta: guardedFallbackAnswer,
           })
-          return { results: fallbackResults, answerMeta: deterministicAnswerMeta }
+          return { results: fallbackResults, answerMeta: guardedFallbackAnswer }
         }
 
         const contextAnswerMeta = buildNoSourceAnswerMeta(normalized)
