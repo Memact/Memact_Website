@@ -18,7 +18,8 @@ const DEFAULT_SCOPES = [
 
 function App() {
   const client = useMemo(() => new AccessClient(ACCESS_URL), [])
-  const [mode, setMode] = useState("signin")
+  const [authMode, setAuthMode] = useState("signin")
+  const [activeTab, setActiveTab] = useState("home")
   const [session, setSession] = useState(getSessionToken())
   const [user, setUser] = useState(null)
   const [email, setEmail] = useState("")
@@ -56,16 +57,17 @@ function App() {
   async function handleAuth(event) {
     event.preventDefault()
     setError("")
-    setStatus(mode === "signup" ? "Creating account." : "Signing in.")
+    setStatus(authMode === "signup" ? "Creating account." : "Signing in.")
     try {
-      const result = mode === "signup"
+      const result = authMode === "signup"
         ? await client.signup({ email, password })
         : await client.signin({ email, password })
       setSessionToken(result.session.token)
       setSession(result.session.token)
       setUser(result.user)
       setPassword("")
-      setStatus("Signed in.")
+      setActiveTab("dashboard")
+      setStatus(authMode === "signup" ? "Account created." : "Signed in. Security email sent if SMTP is configured.")
     } catch (authError) {
       setError(authError.message)
       setStatus("Access needs attention.")
@@ -109,7 +111,7 @@ function App() {
       })
       setOneTimeKey(result.key)
       await refreshDashboard(client, session, setUser, setApps, setApiKeys, setConsents, setStatus, setError)
-      setStatus("API key created. Copy it now.")
+      setStatus("API key created. Copy it now. Security email sent if SMTP is configured.")
     } catch (keyError) {
       setError(keyError.message)
     }
@@ -126,6 +128,16 @@ function App() {
     }
   }
 
+  async function copyOneTimeKey() {
+    if (!oneTimeKey) return
+    try {
+      await navigator.clipboard.writeText(oneTimeKey)
+      setStatus("API key copied.")
+    } catch {
+      setStatus("Copy failed. Select the key manually.")
+    }
+  }
+
   function signOut() {
     setSessionToken("")
     setSession("")
@@ -134,177 +146,291 @@ function App() {
     setApiKeys([])
     setConsents([])
     setOneTimeKey("")
+    setActiveTab("home")
     setStatus("Signed out.")
   }
 
   const scopes = policy?.scopes || {}
+  const dashboardVisible = session && activeTab !== "home"
+  const showAuth = !session && activeTab !== "docs"
 
   return (
     <main className="page">
       <header className="topbar">
-        <a className="wordmark" href="/" aria-label="Memact home">Memact</a>
+        <a className="logo-link" href="https://www.memact.com/" aria-label="Go to memact.com">
+          <img className="logo-img" src="/logo.png" alt="Memact" />
+        </a>
+        <nav className="tabs" aria-label="Memact portal tabs">
+          <button type="button" className={activeTab === "home" ? "tab is-active" : "tab"} onClick={() => setActiveTab("home")}>Home</button>
+          <button type="button" className={activeTab === "dashboard" || activeTab === "login" ? "tab is-active" : "tab"} onClick={() => setActiveTab(session ? "dashboard" : "login")}>
+            {session ? "Dashboard" : "Login"}
+          </button>
+          <button type="button" className={activeTab === "docs" ? "tab is-active" : "tab"} onClick={() => setActiveTab("docs")}>Docs</button>
+        </nav>
         <span className="status-pill">{status}</span>
       </header>
 
-      <section className="hero">
-        <p className="eyebrow">Access layer</p>
-        <h1>API keys for private schema infrastructure.</h1>
-        <p>
-          Register apps, grant consent, and let Memact capture allowed activity
-          to form nodes, edges, and schema packets. Apps do not receive a raw
-          memory dump.
-        </p>
-      </section>
-
       {error ? <p className="error" role="alert">{error}</p> : null}
 
-      {!session ? (
-        <section className="panel auth-panel">
-          <div>
-            <p className="eyebrow">{mode === "signup" ? "Create account" : "Sign in"}</p>
-            <h2>{mode === "signup" ? "Start with an email and password." : "Open your Access dashboard."}</h2>
-            <p className="muted">
-              Passwords are sent only to Access and stored there as hashes.
-            </p>
-          </div>
-          <form className="form" onSubmit={handleAuth}>
+      {activeTab === "docs" ? (
+        <DocsPanel />
+      ) : dashboardVisible ? (
+        <Dashboard
+          user={user}
+          apps={apps}
+          apiKeys={apiKeys}
+          consents={consents}
+          scopes={scopes}
+          selectedAppId={selectedAppId}
+          selectedScopes={selectedScopes}
+          newAppName={newAppName}
+          newAppDescription={newAppDescription}
+          oneTimeKey={oneTimeKey}
+          setSelectedAppId={setSelectedAppId}
+          setSelectedScopes={setSelectedScopes}
+          setNewAppName={setNewAppName}
+          setNewAppDescription={setNewAppDescription}
+          onCreateApp={handleCreateApp}
+          onGrantConsent={handleGrantConsent}
+          onCreateKey={handleCreateKey}
+          onRevokeKey={handleRevokeKey}
+          onCopyKey={copyOneTimeKey}
+          onSignOut={signOut}
+        />
+      ) : (
+        <Landing
+          showAuth={showAuth}
+          authMode={authMode}
+          email={email}
+          password={password}
+          setAuthMode={setAuthMode}
+          setEmail={setEmail}
+          setPassword={setPassword}
+          onAuth={handleAuth}
+          onOpenLogin={() => setActiveTab("login")}
+          session={session}
+        />
+      )}
+    </main>
+  )
+}
+
+function Landing({ showAuth, authMode, email, password, setAuthMode, setEmail, setPassword, onAuth, onOpenLogin, session }) {
+  return (
+    <section className={showAuth ? "landing landing-with-auth" : "landing"}>
+      <div className="hero-copy">
+        <p className="eyebrow">Access layer</p>
+        <h1>API access for private schema infrastructure.</h1>
+        <p>
+          Register apps, grant consent, and let Memact capture allowed activity
+          to form nodes, edges, and schema packets. Apps never receive a raw
+          memory dump by default.
+        </p>
+        <div className="hero-actions">
+          {session ? null : <button type="button" onClick={onOpenLogin}>Login</button>}
+          <a className="button-link ghost" href="https://www.memact.com/">Home</a>
+        </div>
+      </div>
+
+      {showAuth ? (
+        <section className="panel auth-panel" aria-label="Access login">
+          <p className="eyebrow">{authMode === "signup" ? "Create account" : "Login"}</p>
+          <h2>{authMode === "signup" ? "Create Access." : "Open Access."}</h2>
+          <p className="muted">
+            Passwords are sent to Access only and stored as hashes. Raw passwords
+            are never written to the database.
+          </p>
+          <form className="form" onSubmit={onAuth}>
             <label>
               Email
-              <input value={email} type="email" autoComplete="email" onChange={(event) => setEmail(event.target.value)} required />
+              <input value={email} type="email" inputMode="email" autoComplete="email" onChange={(event) => setEmail(event.target.value)} required />
             </label>
             <label>
               Password
-              <input value={password} type="password" autoComplete={mode === "signup" ? "new-password" : "current-password"} minLength={10} onChange={(event) => setPassword(event.target.value)} required />
+              <input value={password} type="password" autoComplete={authMode === "signup" ? "new-password" : "current-password"} minLength={10} onChange={(event) => setPassword(event.target.value)} required />
             </label>
-            <button type="submit">{mode === "signup" ? "Create account" : "Sign in"}</button>
-            <button type="button" className="ghost" onClick={() => setMode(mode === "signup" ? "signin" : "signup")}>
-              {mode === "signup" ? "Already have an account?" : "Need an account?"}
+            <button type="submit">{authMode === "signup" ? "Create account" : "Login"}</button>
+            <button type="button" className="ghost" onClick={() => setAuthMode(authMode === "signup" ? "signin" : "signup")}>
+              {authMode === "signup" ? "I already have an account" : "Create a new account"}
             </button>
           </form>
         </section>
-      ) : (
-        <section className="dashboard">
-          <div className="dashboard-head">
-            <div>
-              <p className="eyebrow">Signed in</p>
-              <h2>{user?.email}</h2>
-              <p className="muted">Plan: free unlimited for now.</p>
-            </div>
-            <button type="button" className="ghost" onClick={signOut}>Sign out</button>
-          </div>
+      ) : null}
+    </section>
+  )
+}
 
-          <div className="grid">
-            <section className="panel">
-              <p className="eyebrow">Register app</p>
-              <form className="form" onSubmit={handleCreateApp}>
-                <label>
-                  App name
-                  <input value={newAppName} onChange={(event) => setNewAppName(event.target.value)} required />
-                </label>
-                <label>
-                  Purpose
-                  <textarea value={newAppDescription} onChange={(event) => setNewAppDescription(event.target.value)} />
-                </label>
-                <button type="submit">Register app</button>
-              </form>
-            </section>
+function Dashboard({
+  user,
+  apps,
+  apiKeys,
+  consents,
+  scopes,
+  selectedAppId,
+  selectedScopes,
+  newAppName,
+  newAppDescription,
+  oneTimeKey,
+  setSelectedAppId,
+  setSelectedScopes,
+  setNewAppName,
+  setNewAppDescription,
+  onCreateApp,
+  onGrantConsent,
+  onCreateKey,
+  onRevokeKey,
+  onCopyKey,
+  onSignOut
+}) {
+  return (
+    <section className="dashboard">
+      <div className="dashboard-head panel slim-panel">
+        <div>
+          <p className="eyebrow">Access dashboard</p>
+          <h2>{user?.email}</h2>
+          <p className="muted">Free unlimited while Memact is early.</p>
+        </div>
+        <button type="button" className="ghost" onClick={onSignOut}>Sign out</button>
+      </div>
 
-            <section className="panel">
-              <p className="eyebrow">Apps</p>
-              {apps.length ? (
-                <div className="stack">
-                  {apps.map((app) => (
-                    <button
-                      key={app.id}
-                      type="button"
-                      className={`app-card ${selectedAppId === app.id ? "is-active" : ""}`}
-                      onClick={() => setSelectedAppId(app.id)}
-                    >
-                      <strong>{app.name}</strong>
-                      <span>{app.description || "No description"}</span>
-                    </button>
-                  ))}
-                </div>
-              ) : (
-                <p className="muted">No apps yet.</p>
-              )}
-            </section>
-          </div>
+      <div className="grid">
+        <section className="panel">
+          <p className="eyebrow">Register app</p>
+          <form className="form" onSubmit={onCreateApp}>
+            <label>
+              App name
+              <input value={newAppName} onChange={(event) => setNewAppName(event.target.value)} required />
+            </label>
+            <label>
+              Purpose
+              <textarea value={newAppDescription} onChange={(event) => setNewAppDescription(event.target.value)} />
+            </label>
+            <button type="submit">Register app</button>
+          </form>
+        </section>
 
-          <section className="panel">
-            <div className="section-head">
-              <div>
-                <p className="eyebrow">Scopes</p>
-                <h2>Choose what this app can ask Memact to do.</h2>
-              </div>
-              <div className="actions">
-                <button type="button" className="ghost" disabled={!selectedAppId} onClick={handleGrantConsent}>Save consent</button>
-                <button type="button" disabled={!selectedAppId} onClick={handleCreateKey}>Create API key</button>
-              </div>
-            </div>
-            <div className="scope-grid">
-              {Object.entries(scopes).map(([scope, definition]) => (
-                <label key={scope} className="scope-card">
-                  <input
-                    type="checkbox"
-                    checked={selectedScopes.includes(scope)}
-                    onChange={() => {
-                      setSelectedScopes((current) => current.includes(scope)
-                        ? current.filter((item) => item !== scope)
-                        : [...current, scope])
-                    }}
-                  />
-                  <span>
-                    <strong>{scope}</strong>
-                    <small>{definition.description}</small>
-                  </span>
-                </label>
+        <section className="panel">
+          <p className="eyebrow">Apps</p>
+          {apps.length ? (
+            <div className="stack">
+              {apps.map((app) => (
+                <button
+                  key={app.id}
+                  type="button"
+                  className={`app-card ${selectedAppId === app.id ? "is-active" : ""}`}
+                  onClick={() => setSelectedAppId(app.id)}
+                >
+                  <strong>{app.name}</strong>
+                  <span>{app.description || "No description"}</span>
+                </button>
               ))}
             </div>
-          </section>
+          ) : (
+            <p className="muted">Register an app first.</p>
+          )}
+        </section>
+      </div>
 
-          {oneTimeKey ? (
-            <section className="panel key-panel">
-              <p className="eyebrow">Copy now</p>
-              <h2>One-time API key</h2>
-              <code>{oneTimeKey}</code>
-              <p className="muted">Memact stores only a hash of this key. It cannot be shown again.</p>
-            </section>
-          ) : null}
+      <section className="panel">
+        <div className="section-head">
+          <div>
+            <p className="eyebrow">Scopes</p>
+            <h2>Choose what this app can ask Memact to do.</h2>
+          </div>
+          <div className="actions">
+            <button type="button" className="ghost" disabled={!selectedAppId} onClick={onGrantConsent}>Save consent</button>
+            <button type="button" disabled={!selectedAppId} onClick={onCreateKey}>Create API key</button>
+          </div>
+        </div>
+        <div className="scope-grid">
+          {Object.entries(scopes).map(([scope, definition]) => (
+            <label key={scope} className="scope-card">
+              <input
+                type="checkbox"
+                checked={selectedScopes.includes(scope)}
+                onChange={() => {
+                  setSelectedScopes((current) => current.includes(scope)
+                    ? current.filter((item) => item !== scope)
+                    : [...current, scope])
+                }}
+              />
+              <span>
+                <strong>{scope}</strong>
+                <small>{definition.description}</small>
+              </span>
+            </label>
+          ))}
+        </div>
+      </section>
 
-          <div className="grid">
-            <section className="panel">
-              <p className="eyebrow">API keys</p>
-              <div className="stack">
-                {apiKeys.length ? apiKeys.map((key) => (
-                  <div className="list-card" key={key.id}>
-                    <span>
-                      <strong>{key.name}</strong>
-                      <small>{key.key_prefix}... · {key.revoked_at ? "revoked" : "active"}</small>
-                    </span>
-                    {!key.revoked_at ? <button type="button" className="ghost" onClick={() => handleRevokeKey(key.id)}>Revoke</button> : null}
-                  </div>
-                )) : <p className="muted">No API keys yet.</p>}
+      {oneTimeKey ? (
+        <section className="panel key-panel">
+          <div>
+            <p className="eyebrow">Copy now</p>
+            <h2>One-time API key</h2>
+          </div>
+          <div className="key-box">
+            <code>{oneTimeKey}</code>
+            <button type="button" onClick={onCopyKey}>Copy key</button>
+          </div>
+          <p className="muted">Memact stores only a hash. This raw key cannot be shown again.</p>
+        </section>
+      ) : null}
+
+      <div className="grid">
+        <section className="panel">
+          <p className="eyebrow">API keys</p>
+          <div className="stack">
+            {apiKeys.length ? apiKeys.map((key) => (
+              <div className="list-card" key={key.id}>
+                <span>
+                  <strong>{key.name}</strong>
+                  <small>{key.key_prefix}... | {key.revoked_at ? "revoked" : "active"}</small>
+                </span>
+                {!key.revoked_at ? <button type="button" className="ghost" onClick={() => onRevokeKey(key.id)}>Revoke</button> : null}
               </div>
-            </section>
-
-            <section className="panel">
-              <p className="eyebrow">Consent</p>
-              <div className="stack">
-                {consents.length ? consents.map((consent) => (
-                  <div className="list-card" key={consent.id}>
-                    <span>
-                      <strong>{apps.find((app) => app.id === consent.app_id)?.name || consent.app_id}</strong>
-                      <small>{consent.scopes.join(", ")}</small>
-                    </span>
-                  </div>
-                )) : <p className="muted">No consent saved yet.</p>}
-              </div>
-            </section>
+            )) : <p className="muted">No API keys yet.</p>}
           </div>
         </section>
-      )}
-    </main>
+
+        <section className="panel">
+          <p className="eyebrow">Consent</p>
+          <div className="stack">
+            {consents.length ? consents.map((consent) => (
+              <div className="list-card" key={consent.id}>
+                <span>
+                  <strong>{apps.find((app) => app.id === consent.app_id)?.name || consent.app_id}</strong>
+                  <small>{consent.scopes.join(", ")}</small>
+                </span>
+              </div>
+            )) : <p className="muted">No consent saved yet.</p>}
+          </div>
+        </section>
+      </div>
+    </section>
+  )
+}
+
+function DocsPanel() {
+  return (
+    <section className="docs-panel panel">
+      <p className="eyebrow">How Access works</p>
+      <h1>Apps ask. Users consent. Memact checks.</h1>
+      <div className="docs-grid">
+        <article>
+          <h2>1. Register an app</h2>
+          <p>Give the app a name and purpose so the user knows what it is for.</p>
+        </article>
+        <article>
+          <h2>2. Grant scopes</h2>
+          <p>Scopes decide whether an app can capture, write schemas, or read summaries, evidence, or graph data.</p>
+        </article>
+        <article>
+          <h2>3. Create a key</h2>
+          <p>The raw API key is shown once. Memact stores only a hash and emails security events when SMTP is configured.</p>
+        </article>
+      </div>
+    </section>
   )
 }
 
