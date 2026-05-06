@@ -33,8 +33,7 @@ textarea {
   font: inherit;
 }
 
-button,
-.button-link {
+button {
   border: 1px solid var(--line-strong);
   border-radius: 999px;
   padding: 0.86rem 1.15rem;
@@ -142,7 +141,6 @@ button:disabled {
 }
 
 .hero-copy h1,
-.docs-panel h1,
 .panel h2,
 .dashboard-head h2,
 .key-panel h2 {
@@ -157,8 +155,7 @@ button:disabled {
 }
 
 .hero-copy p,
-.muted,
-.docs-panel p {
+.muted {
   color: var(--muted);
 }
 
@@ -168,7 +165,6 @@ button:disabled {
   line-height: 1.55;
 }
 
-.hero-actions,
 .actions {
   display: flex;
   flex-wrap: wrap;
@@ -328,33 +324,6 @@ textarea:focus {
   font-weight: 850;
 }
 
-.docs-panel {
-  margin-top: 46px;
-}
-
-.docs-panel h1 {
-  max-width: 860px;
-  font-size: clamp(2.5rem, 6vw, 5rem);
-}
-
-.docs-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 1rem;
-  margin-top: 2rem;
-}
-
-.docs-grid article {
-  border: 1px solid var(--line);
-  border-radius: 28px;
-  padding: 1.2rem;
-  background: rgba(0, 1, 27, 0.34);
-}
-
-.docs-grid h2 {
-  margin: 0 0 0.75rem;
-}
-
 @media (max-width: 900px) {
   .topbar,
   .dashboard-head,
@@ -366,8 +335,7 @@ textarea:focus {
   }
 
   .landing-with-auth,
-  .grid,
-  .docs-grid {
+  .grid {
     grid-template-columns: 1fr;
   }
 
@@ -396,7 +364,7 @@ textarea:focus {
 
   .tabs {
     display: grid;
-    grid-template-columns: repeat(3, 1fr);
+    grid-template-columns: repeat(auto-fit, minmax(0, 1fr));
   }
 
   .tab {
