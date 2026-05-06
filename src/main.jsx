@@ -220,7 +220,17 @@ function App() {
     }
   }
 
-  function signOut() {
+  async function signOut() {
+    setError("")
+    setStatus("Signing out.")
+    try {
+      if (supabase) {
+        const { error: signOutError } = await supabase.auth.signOut()
+        if (signOutError) throw signOutError
+      }
+    } catch (signOutError) {
+      setError(signOutError.message)
+    }
     setAuthSession(null)
     setAuthUser(null)
     setUser(null)
