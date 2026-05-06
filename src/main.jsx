@@ -164,16 +164,12 @@ function App() {
         <a className="logo-link" href="https://www.memact.com/" aria-label="Go to memact.com">
           <img className="logo-img" src="/logo.png" alt="Memact" />
         </a>
-        <nav className="tabs" aria-label="Memact portal tabs">
-          {!session ? (
-            <button type="button" className="tab is-active" onClick={() => setActiveTab("login")}>Login</button>
-          ) : (
-            <>
-              <button type="button" className={activeTab === "api-keys" ? "tab is-active" : "tab"} onClick={() => setActiveTab("api-keys")}>API Keys</button>
-              <button type="button" className={activeTab === "apps" ? "tab is-active" : "tab"} onClick={() => setActiveTab("apps")}>Apps</button>
-            </>
-          )}
-        </nav>
+        {session ? (
+          <nav className="tabs" aria-label="Memact portal tabs">
+            <button type="button" className={activeTab === "api-keys" ? "tab is-active" : "tab"} onClick={() => setActiveTab("api-keys")}>API Keys</button>
+            <button type="button" className={activeTab === "apps" ? "tab is-active" : "tab"} onClick={() => setActiveTab("apps")}>Apps</button>
+          </nav>
+        ) : null}
         <span className="status-pill">{status}</span>
       </header>
 
