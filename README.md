@@ -2,82 +2,47 @@
 
 Version: `v0.0`
 
-Website is the Memact user interface.
+Website is now the Memact Access portal.
 
 It owns one job:
 
 ```text
-let a user ask about a thought and inspect the evidence Memact has for it
+let a developer or user sign in, register an app, grant consent, and create API keys
 ```
 
-Website does not own capture, schema formation, memory storage, origin scoring, or influence scoring. It calls those layers through public contracts.
+Website does not capture activity and does not read memory graphs. It talks to
+Access, which protects the permission boundary.
 
-## What This Repo Owns
-
-- Minimal search-style UI.
-- Prompt mode for typing a thought directly.
-- Survey mode for guided questions when the thought is vague or evidence is thin.
-- History, settings, info panel, and local setup flow.
-- Capture extension bridge integration.
-- Local answer rendering with sources when available.
-- Optional Gemini proxy for short answer wording from a small evidence packet.
-- Render-ready web deployment.
-
-## Product Modes
-
-- `Prompt`
-  User types a thought.
-
-- `Survey`
-  User answers a short flow. Website turns answers into a clearer query and can add useful local context.
-
-Prompt and Survey have separate history entries.
-
-## Capture Integration
-
-Website talks to the Capture extension through `window.capture`.
-
-It uses:
-
-```js
-window.capture.getSnapshot()
-window.capture.getGraphPackets()
-window.capture.getContentUnits()
-window.capture.getMediaJobs()
-```
-
-The site should not read Capture internals or expect downloaded JSON files.
-
-## Optional Gemini
-
-Gemini is optional. The app should still function without it.
-
-If enabled, Website sends only a compact evidence packet, not the full captured activity store.
-
-Create a local `.env` file:
+The old thought-query website has been archived outside this repo at:
 
 ```text
-GEMINI_API_KEY=replace_with_your_key
+../oldwebsite
 ```
 
-Do not commit real API keys.
+## Flow
+
+```text
+Website -> Access -> scoped API key -> Capture / Inference / Schema / Memory
+```
+
+Apps use Memact to capture allowed activity and form schemas. Apps do not get a
+blanket dump of a user's private graph.
 
 ## Run Locally
 
-Prerequisites:
-
-- Node.js `20+`
-- npm `10+`
-
-Install:
+Start Access first:
 
 ```powershell
+cd ../Access
 npm install
+npm run dev
 ```
 
-Run dev server:
+Start Website:
 
 ```powershell
+cd ../interface
+npm install
 npm run dev
 ```
 
@@ -93,28 +58,22 @@ Build:
 npm run build
 ```
 
-Preview production build:
+## Configuration
 
-```powershell
-npm run preview
+Create `.env` if Access is not running on the default URL:
+
+```text
+VITE_MEMACT_ACCESS_URL=http://127.0.0.1:8787
 ```
 
-Run Gemini proxy locally:
+Do not commit real secrets.
 
-```powershell
-npm run api
-```
+## Current Policy
 
-## Deploy
-
-This repo is suitable for Render as a web service/static frontend depending on the chosen deployment path.
-
-Keep these out of Git:
-
-- `.env`
-- real API keys
-- local capture exports
-- temporary screenshots or pitch output
+- Free unlimited access for now.
+- API keys are shown once.
+- Scope and consent are required before apps can use Memact.
+- Graph read access is separate from capture/schema write access.
 
 ## License
 
