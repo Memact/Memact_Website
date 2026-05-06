@@ -13,6 +13,16 @@ export function setSessionToken(token) {
   }
 }
 
+export class AccessApiError extends Error {
+  constructor(status, message, code = "request_failed", raw = null) {
+    super(message || "Request failed.")
+    this.name = "AccessApiError"
+    this.status = status
+    this.code = code
+    this.raw = raw
+  }
+}
+
 export class AccessClient {
   constructor(baseUrl) {
     this.baseUrl = String(baseUrl || "").replace(/\/$/, "")
@@ -92,10 +102,25 @@ export class AccessClient {
       body: body ? JSON.stringify(body) : undefined
     })
     const text = await response.text()
-    const data = text ? JSON.parse(text) : {}
+    const data = parseResponseBody(text)
     if (!response.ok) {
-      throw new Error(data?.error?.message || "Request failed.")
+      const errorPayload = data && typeof data === "object" ? data.error : null
+      throw new AccessApiError(
+        response.status,
+        errorPayload?.message || response.statusText || "Request failed.",
+        errorPayload?.code || "request_failed",
+        data
+      )
     }
-    return data
+    return data && typeof data === "object" ? data : {}
+  }
+}
+
+function parseResponseBody(text) {
+  if (!text) return {}
+  try {
+    return JSON.parse(text)
+  } catch {
+    return text
   }
 }
