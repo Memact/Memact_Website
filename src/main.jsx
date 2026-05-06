@@ -72,7 +72,7 @@ function App() {
       setUser(result.user)
       setPassword("")
       setActiveTab("api-keys")
-      setStatus(authMode === "signup" ? "Account created." : "Signed in. Security email sent if SMTP is configured.")
+      setStatus(authMode === "signup" ? "Account created." : "Signed in.")
     } catch (authError) {
       setError(authError.message)
       setStatus(authStatusMessage(authError, authMode))
@@ -116,7 +116,7 @@ function App() {
       })
       setOneTimeKey(result.key)
       await refreshDashboard(client, session, setUser, setApps, setApiKeys, setConsents, setStatus, setError)
-      setStatus("API key created. Copy it now. Security email sent if SMTP is configured.")
+      setStatus("API key created. Copy it now.")
     } catch (keyError) {
       setError(keyError.message)
     }
