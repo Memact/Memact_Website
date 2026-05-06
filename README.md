@@ -110,6 +110,8 @@ Access service URL above. The site includes:
 
 - Free unlimited access for now.
 - API keys are shown once.
+- App names are unique per account.
+- Deleting an app revokes its active API keys and permissions.
 - Scopes and saved permissions are required before apps can use Memact.
 - Graph read access is separate from capture/schema write access.
 

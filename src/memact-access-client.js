@@ -56,6 +56,10 @@ export class AccessClient {
     return this.post("/v1/apps", body, session)
   }
 
+  deleteApp(session, appId) {
+    return this.delete(`/v1/apps/${encodeURIComponent(appId)}`, session)
+  }
+
   apiKeys(session) {
     return this.get("/v1/api-keys", session)
   }
@@ -90,6 +94,10 @@ export class AccessClient {
 
   async post(path, body, session = "") {
     return this.request(path, { method: "POST", session, body })
+  }
+
+  async delete(path, session = "") {
+    return this.request(path, { method: "DELETE", session })
   }
 
   async request(path, { method, session = "", apiKey = "", body } = {}) {

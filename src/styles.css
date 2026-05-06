@@ -205,6 +205,15 @@ button:disabled {
   min-width: 176px;
 }
 
+.section-toolbar {
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.75rem;
+}
+
 .new-app-button {
   display: inline-flex;
   flex: 0 0 auto;
@@ -215,6 +224,17 @@ button:disabled {
   padding-inline: 1.25rem;
   color: var(--text);
   background: rgba(255, 255, 255, 0.08);
+}
+
+.danger {
+  color: #ffd8d8;
+  border-color: rgba(255, 180, 180, 0.4);
+  background: rgba(255, 120, 120, 0.06);
+}
+
+.danger:hover {
+  border-color: rgba(255, 220, 220, 0.68);
+  background: rgba(255, 150, 150, 0.12);
 }
 
 .new-app-button span {

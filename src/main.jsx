@@ -195,6 +195,28 @@ function App() {
     await refreshDashboard(client, session, setUser, setApps, setApiKeys, setConsents, setStatus, setError, setCanRetryDashboard)
   }
 
+  async function handleDeleteApp() {
+    if (!selectedAppId) return
+    const app = apps.find((item) => item.id === selectedAppId)
+    const appName = app?.name || "this app"
+    const confirmed = window.confirm(`Delete ${appName}? Its API keys will stop working.`)
+    if (!confirmed) return
+    setError("")
+    setCanRetryDashboard(false)
+    setStatus("Deleting app.")
+    try {
+      await client.deleteApp(session, selectedAppId)
+      setSelectedAppId("")
+      setOneTimeKey("")
+      setApiTestResult("")
+      await refreshDashboard(client, session, setUser, setApps, setApiKeys, setConsents, setStatus, setError, setCanRetryDashboard)
+      setStatus("App deleted.")
+    } catch (deleteError) {
+      setError(deleteError.message)
+      setStatus(statusForAccessError(deleteError).status)
+    }
+  }
+
   async function handleGrantConsent() {
     setError("")
     try {
@@ -328,6 +350,7 @@ function App() {
           setNewAppDescription={setNewAppDescription}
           setShowAppForm={setShowAppForm}
           onCreateApp={handleCreateApp}
+          onDeleteApp={handleDeleteApp}
           onGrantConsent={handleGrantConsent}
           onCreateKey={handleCreateKey}
           onRevokeKey={handleRevokeKey}
@@ -409,6 +432,7 @@ function Dashboard({
   setNewAppDescription,
   setShowAppForm,
   onCreateApp,
+  onDeleteApp,
   onGrantConsent,
   onCreateKey,
   onRevokeKey,
@@ -483,9 +507,14 @@ function Dashboard({
                 <p className="muted">{appDescription}</p>
               </div>
               {hasApps ? (
-                <button type="button" className="new-app-button" aria-label={isCreatingApp ? "Cancel app creation" : "Create app"} onClick={() => setShowAppForm((current) => !current)}>
-                  {isCreatingApp ? "Cancel" : "New app"}
-                </button>
+                <div className="section-toolbar">
+                  {!isCreatingApp && selectedApp ? (
+                    <button type="button" className="ghost danger" onClick={onDeleteApp}>Delete app</button>
+                  ) : null}
+                  <button type="button" className="new-app-button" aria-label={isCreatingApp ? "Cancel app creation" : "Create app"} onClick={() => setShowAppForm((current) => !current)}>
+                    {isCreatingApp ? "Cancel" : "New app"}
+                  </button>
+                </div>
               ) : null}
             </div>
 
