@@ -315,14 +315,6 @@ function Dashboard({
               <div className="section-copy">
                 <p className="eyebrow">Scopes</p>
                 <h2>Choose what this app can ask Memact to do.</h2>
-                <p className="muted consent-explainer">
-                  Consent means you choose and save the exact permissions an app can request before it uses Memact.
-                  You can grant only the scopes you trust and keep everything else off limits.
-                </p>
-              </div>
-              <div className="actions section-actions">
-                <button type="button" className="ghost" disabled={!selectedAppId} onClick={onGrantConsent}>Save consent</button>
-                <button type="button" disabled={!selectedAppId} onClick={onCreateKey}>Create API key</button>
               </div>
             </div>
             <div className="scope-grid">
@@ -343,6 +335,10 @@ function Dashboard({
                   </span>
                 </label>
               ))}
+            </div>
+            <div className="actions section-actions">
+              <button type="button" className="ghost" disabled={!selectedAppId} onClick={onGrantConsent}>Save consent</button>
+              <button type="button" disabled={!selectedAppId} onClick={onCreateKey}>Create API key</button>
             </div>
           </section>
 
