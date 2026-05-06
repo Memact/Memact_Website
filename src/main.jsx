@@ -7,6 +7,7 @@ import {
   ACCESS_URL
 } from "./memact-access-client.js"
 import { getAuthRedirectUrl, isSupabaseConfigured, requireSupabase, supabase } from "./supabase-client.js"
+import { hasDuplicateAppName } from "./app-name.js"
 
 const DEFAULT_SCOPES = [
   "capture:webpage",
@@ -168,13 +169,13 @@ function App() {
   async function handleCreateApp(event) {
     event.preventDefault()
     setError("")
+    setCanRetryDashboard(false)
     const cleanName = newAppName.trim()
     if (!cleanName) {
       setError("App name is required.")
       return
     }
-    const nextSlug = normalizeAppName(cleanName)
-    if (apps.some((app) => normalizeAppName(app.name) === nextSlug)) {
+    if (hasDuplicateAppName(apps, cleanName)) {
       setError("You already have an app with this name.")
       return
     }
@@ -572,7 +573,7 @@ function Dashboard({
                     </span>
                     {!key.revoked_at ? <button type="button" className="ghost" onClick={() => onRevokeKey(key.id)}>Revoke</button> : null}
                   </div>
-                )) : <p className="muted">{selectedAppId ? "No API keys for this app yet." : "Create an app first."}</p>}
+                )) : <p className="muted">{selectedAppId ? "No API keys for this app yet." : "Select an app to view API keys."}</p>}
               </div>
             </section>
           </div>
@@ -647,16 +648,6 @@ function statusForAccessError(error) {
   }
 }
 
-function normalizeAppName(name) {
-  return String(name || "")
-    .toLowerCase()
-    .trim()
-    .replace(/\s+/g, " ")
-    .replace(/ /g, "-")
-    .replace(/[^a-z0-9-]/g, "")
-    .replace(/-+/g, "-")
-    .replace(/^-|-$/g, "")
-}
 
 function authStatusMessage(error) {
   const message = String(error?.message || "").toLowerCase()
