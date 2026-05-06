@@ -62,7 +62,7 @@ function App() {
   async function handleAuth(event) {
     event.preventDefault()
     setError("")
-      setStatus(authMode === "signup" ? "Creating account." : "Signing in.")
+    setStatus(authMode === "signup" ? "Creating account." : "Signing in.")
     try {
       const result = authMode === "signup"
         ? await client.signup({ email, password })
@@ -75,7 +75,7 @@ function App() {
       setStatus(authMode === "signup" ? "Account created." : "Signed in. Security email sent if SMTP is configured.")
     } catch (authError) {
       setError(authError.message)
-      setStatus("Memact needs attention.")
+      setStatus(authStatusMessage(authError, authMode))
     }
   }
 
@@ -436,6 +436,23 @@ async function refreshDashboard(client, session, setUser, setApps, setApiKeys, s
     setError(error.message)
     setStatus("Could not sync dashboard.")
   }
+}
+
+function authStatusMessage(error, authMode) {
+  const message = String(error?.message || "").toLowerCase()
+  if (message.includes("failed to fetch") || message.includes("networkerror")) {
+    return "Start Memact locally to login."
+  }
+  if (message.includes("email or password")) {
+    return "Check email or password."
+  }
+  if (message.includes("account already exists")) {
+    return "Account already exists."
+  }
+  if (message.includes("at least 10")) {
+    return "Use a longer password."
+  }
+  return authMode === "signup" ? "Account was not created." : "Login did not finish."
 }
 
 createRoot(document.getElementById("root")).render(<App />)
