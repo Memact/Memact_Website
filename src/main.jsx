@@ -8,14 +8,7 @@ import {
 } from "./memact-access-client.js"
 import { getAuthRedirectUrl, isSupabaseConfigured, requireSupabase, supabase } from "./supabase-client.js"
 import { hasDuplicateAppName } from "./app-name.js"
-
-const DEFAULT_SCOPES = [
-  "capture:webpage",
-  "schema:write",
-  "graph:write",
-  "memory:write",
-  "memory:read_summary"
-]
+import { defaultScopesForPolicy, normalizeSelectedScopes } from "./access-policy.js"
 
 function App() {
   const client = useMemo(() => new AccessClient(ACCESS_URL), [])
@@ -37,7 +30,7 @@ function App() {
   const [newAppName, setNewAppName] = useState("")
   const [newAppDescription, setNewAppDescription] = useState("")
   const [selectedAppId, setSelectedAppId] = useState("")
-  const [selectedScopes, setSelectedScopes] = useState(DEFAULT_SCOPES)
+  const [selectedScopes, setSelectedScopes] = useState(() => defaultScopesForPolicy(null))
   const [oneTimeKey, setOneTimeKey] = useState("")
   const [apiTestResult, setApiTestResult] = useState("")
   const [showAppForm, setShowAppForm] = useState(false)
@@ -119,8 +112,9 @@ function App() {
   useEffect(() => {
     if (!selectedAppId) return
     const appConsent = consents.find((consent) => consent.app_id === selectedAppId && !consent.revoked_at)
-    setSelectedScopes(appConsent?.scopes?.length ? appConsent.scopes : DEFAULT_SCOPES)
-  }, [consents, selectedAppId])
+    const nextScopes = appConsent?.scopes?.length ? appConsent.scopes : defaultScopesForPolicy(policy)
+    setSelectedScopes(normalizeSelectedScopes(nextScopes, policy))
+  }, [consents, policy, selectedAppId])
 
   async function handleEmailLogin(event) {
     event.preventDefault()
@@ -204,7 +198,7 @@ function App() {
   async function handleGrantConsent() {
     setError("")
     try {
-      await client.grantConsent(session, { app_id: selectedAppId, scopes: selectedScopes })
+      await client.grantConsent(session, { app_id: selectedAppId, scopes: normalizeSelectedScopes(selectedScopes, policy) })
       await refreshDashboard(client, session, setUser, setApps, setApiKeys, setConsents, setStatus, setError, setCanRetryDashboard)
       setStatus("Permissions saved.")
     } catch (consentError) {
@@ -219,7 +213,7 @@ function App() {
       const result = await client.createApiKey(session, {
         app_id: selectedAppId,
         name: "Default app key",
-        scopes: selectedScopes
+        scopes: normalizeSelectedScopes(selectedScopes, policy)
       })
       setOneTimeKey(result.key)
       setApiTestResult("")
@@ -257,8 +251,9 @@ function App() {
     setApiTestResult("")
     setStatus("Testing API key.")
     try {
-      const result = await client.verifyApiKey(oneTimeKey, selectedScopes)
-      setApiTestResult(`Verified for ${result.scopes.length} scope${result.scopes.length === 1 ? "" : "s"}.`)
+      const result = await client.verifyApiKey(oneTimeKey, normalizeSelectedScopes(selectedScopes, policy))
+      const verifiedScopes = Array.isArray(result.scopes) ? result.scopes : []
+      setApiTestResult(`Verified for ${verifiedScopes.length} scope${verifiedScopes.length === 1 ? "" : "s"}.`)
       setStatus("API key works.")
     } catch (testError) {
       setError(testError.message)

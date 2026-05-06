@@ -1,7 +1,9 @@
 import { createClient } from "@supabase/supabase-js"
 
-const supabaseUrl = import.meta.env.NEXT_PUBLIC_SUPABASE_URL || ""
-const supabaseAnonKey = import.meta.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ""
+const env = import.meta.env || {}
+const supabaseUrl = env.VITE_SUPABASE_URL || env.NEXT_PUBLIC_SUPABASE_URL || ""
+const supabaseAnonKey = env.VITE_SUPABASE_ANON_KEY || env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ""
+const authRedirectUrl = env.VITE_AUTH_REDIRECT_URL || env.NEXT_PUBLIC_AUTH_REDIRECT_URL || ""
 
 export const isSupabaseConfigured = Boolean(supabaseUrl && supabaseAnonKey)
 
@@ -17,13 +19,15 @@ export const supabase = isSupabaseConfigured
 
 export function requireSupabase() {
   if (!supabase) {
-    throw new Error("Supabase is not configured. Add NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY.")
+    throw new Error("Supabase is not configured. Add VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY.")
   }
   return supabase
 }
 
 export function getAuthRedirectUrl() {
-  return import.meta.env.DEV
-    ? "http://localhost:3000/dashboard"
-    : "https://memact.com/dashboard"
+  if (authRedirectUrl) return authRedirectUrl
+  if (typeof window !== "undefined" && window.location?.origin) {
+    return new URL("/dashboard", window.location.origin).toString()
+  }
+  return "https://memact.com/dashboard"
 }

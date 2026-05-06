@@ -64,8 +64,10 @@ Create `.env`:
 
 ```text
 VITE_MEMACT_ACCESS_URL=http://127.0.0.1:8787
-NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
-NEXT_PUBLIC_SUPABASE_ANON_KEY=your-public-anon-key
+VITE_SUPABASE_URL=https://your-project.supabase.co
+VITE_SUPABASE_ANON_KEY=your-public-anon-key
+# Optional override for non-standard deploy domains. Defaults to the current origin.
+# VITE_AUTH_REDIRECT_URL=http://localhost:3000/dashboard
 ```
 
 Only use the Supabase anon key in the Website. Never put a service role key or
@@ -85,8 +87,9 @@ For Render, set:
 
 ```text
 VITE_MEMACT_ACCESS_URL=https://memact-access.onrender.com
-NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
-NEXT_PUBLIC_SUPABASE_ANON_KEY=your-public-anon-key
+VITE_SUPABASE_URL=https://your-project.supabase.co
+VITE_SUPABASE_ANON_KEY=your-public-anon-key
+# Optional: VITE_AUTH_REDIRECT_URL=https://memact.com/dashboard
 ```
 
 Change the URL if the Access service uses a custom domain.
