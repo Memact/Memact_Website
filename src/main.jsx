@@ -332,7 +332,7 @@ function Landing({ showAuth, email, authLoading, authNotice, setEmail, onEmailLo
       <div className="hero-copy">
         <h1>Manage access to Memact.</h1>
         <p>
-          Sign in, register apps, grant consent, and create scoped API keys.
+          Sign in, register apps, save permissions, and create scoped API keys.
           Apps can use Memact through clear permissions while your memory data
           stays protected by default.
         </p>
@@ -448,7 +448,7 @@ function Dashboard({
               <div>
                 <p className="eyebrow">App</p>
                 <h2>{selectedApp ? selectedApp.name : "Create an app first."}</h2>
-                <p className="muted">{selectedApp ? selectedApp.description || "No description added." : "Each app gets its own consent and API keys."}</p>
+                <p className="muted">{selectedApp ? selectedApp.description || "No description added." : "Each app gets its own permissions and API keys."}</p>
               </div>
               <button type="button" className="new-app-button" aria-label="Create app" onClick={() => setShowAppForm((current) => !current)}>
                 <span aria-hidden="true">{showAppForm ? "-" : "+"}</span>
@@ -582,7 +582,13 @@ async function refreshDashboard(client, session, setUser, setApps, setApiKeys, s
     setConsents(consentResult.consents)
     setStatus("Dashboard synced.")
   } catch (error) {
-    setError(error.message)
+    const message = String(error?.message || "")
+    if (/session is missing|session.*expired|invalid session/i.test(message)) {
+      setError("Access could not verify this login yet. Restart Access after saving .env, then refresh.")
+      setStatus("Access verification failed.")
+      return
+    }
+    setError(message)
     setStatus("Could not sync dashboard.")
   }
 }
