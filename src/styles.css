@@ -131,6 +131,13 @@ button:disabled {
   text-align: right;
 }
 
+.status-line {
+  margin: 0 0 1rem;
+  color: var(--muted);
+  text-align: center;
+  font-weight: 800;
+}
+
 .landing {
   display: grid;
   align-items: center;
@@ -404,6 +411,33 @@ textarea:focus {
 .account-panel {
   display: grid;
   gap: 1.1rem;
+}
+
+.identity-card {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+.identity-card img,
+.identity-card span {
+  width: 68px;
+  height: 68px;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+}
+
+.identity-card img {
+  object-fit: cover;
+}
+
+.identity-card span {
+  display: inline-grid;
+  place-items: center;
+  color: #00011b;
+  background: #ffffff;
+  font-size: 1.6rem;
+  font-weight: 950;
 }
 
 .account-grid {

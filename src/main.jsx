@@ -3,11 +3,9 @@ import { createRoot } from "react-dom/client"
 import "./styles.css"
 import {
   AccessClient,
-  ACCESS_URL,
-  getSessionToken,
-  setSessionToken
+  ACCESS_URL
 } from "./memact-access-client.js"
-import { getAuthRedirectUrl, requireSupabase } from "./supabase-client.js"
+import { getAuthRedirectUrl, isSupabaseConfigured, requireSupabase, supabase } from "./supabase-client.js"
 
 const DEFAULT_SCOPES = [
   "capture:webpage",
@@ -19,8 +17,10 @@ const DEFAULT_SCOPES = [
 
 function App() {
   const client = useMemo(() => new AccessClient(ACCESS_URL), [])
-  const [session, setSession] = useState(getSessionToken())
-  const [activeTab, setActiveTab] = useState(getSessionToken() ? "access" : "login")
+  const [authSession, setAuthSession] = useState(null)
+  const [authUser, setAuthUser] = useState(null)
+  const [authChecking, setAuthChecking] = useState(true)
+  const [activeTab, setActiveTab] = useState(window.location.pathname === "/dashboard" ? "access" : "login")
   const [user, setUser] = useState(null)
   const [email, setEmail] = useState("")
   const [authLoading, setAuthLoading] = useState("")
@@ -37,6 +37,7 @@ function App() {
   const [selectedScopes, setSelectedScopes] = useState(DEFAULT_SCOPES)
   const [oneTimeKey, setOneTimeKey] = useState("")
   const [showAppForm, setShowAppForm] = useState(false)
+  const session = authSession?.access_token || ""
 
   useEffect(() => {
     client.health()
@@ -46,14 +47,56 @@ function App() {
   }, [client])
 
   useEffect(() => {
+    if (!isSupabaseConfigured || !supabase) {
+      setAuthChecking(false)
+      setStatus("Supabase env vars are missing.")
+      return undefined
+    }
+
+    let mounted = true
+    supabase.auth.getSession().then(({ data, error }) => {
+      if (!mounted) return
+      if (error) {
+        setError(error.message)
+      }
+      const nextSession = data?.session || null
+      setAuthSession(nextSession)
+      setAuthUser(nextSession?.user || null)
+      setAuthChecking(false)
+      if (nextSession && window.location.pathname !== "/dashboard") {
+        window.history.replaceState({}, "", "/dashboard")
+      }
+      if (!nextSession && window.location.pathname === "/dashboard") {
+        window.history.replaceState({}, "", "/login")
+        setActiveTab("login")
+      }
+    })
+
+    const { data: subscription } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+      if (!mounted) return
+      setAuthSession(nextSession)
+      setAuthUser(nextSession?.user || null)
+      if (nextSession) {
+        setActiveTab("access")
+        window.history.replaceState({}, "", "/dashboard")
+      }
+    })
+
+    return () => {
+      mounted = false
+      subscription?.subscription?.unsubscribe()
+    }
+  }, [])
+
+  useEffect(() => {
     const tabName = activeTab === "account" ? "Account" : activeTab === "access" ? "API Keys" : "Login"
     document.title = `Memact | ${tabName}`
   }, [activeTab])
 
   useEffect(() => {
-    if (!session) return
+    if (!session || authChecking) return
     refreshDashboard(client, session, setUser, setApps, setApiKeys, setConsents, setStatus, setError)
-  }, [client, session])
+  }, [authChecking, client, session])
 
   useEffect(() => {
     if (!selectedAppId && apps[0]?.id) {
@@ -178,8 +221,8 @@ function App() {
   }
 
   function signOut() {
-    setSessionToken("")
-    setSession("")
+    setAuthSession(null)
+    setAuthUser(null)
     setUser(null)
     setApps([])
     setApiKeys([])
@@ -187,6 +230,7 @@ function App() {
     setOneTimeKey("")
     setActiveTab("login")
     setStatus("Signed out.")
+    window.history.replaceState({}, "", "/login")
   }
 
   const scopes = policy?.scopes || {}
@@ -208,11 +252,13 @@ function App() {
       </header>
 
       {error ? <p className="error" role="alert">{error}</p> : null}
+      {authChecking ? <p className="status-line">Checking login.</p> : null}
 
       {session ? (
         <Dashboard
           activeTab={activeTab}
           user={user}
+          authUser={authUser}
           apps={apps}
           apiKeys={apiKeys}
           consents={consents}
@@ -291,6 +337,7 @@ function Landing({ showAuth, email, authLoading, authNotice, setEmail, onEmailLo
 function Dashboard({
   activeTab,
   user,
+  authUser,
   apps,
   apiKeys,
   consents,
@@ -319,12 +366,16 @@ function Dashboard({
   const consentChanged = selectedConsent ? !sameScopes(selectedScopes, selectedConsent.scopes) : true
   const canCreateKey = Boolean(selectedAppId && selectedConsent && !consentChanged)
 
+  const provider = user?.provider || authUser?.app_metadata?.provider || authUser?.identities?.[0]?.provider || "email"
+  const avatar = user?.avatar_url || authUser?.user_metadata?.avatar_url || authUser?.user_metadata?.picture || ""
+  const displayEmail = user?.email || authUser?.email || ""
+
   return (
     <section className="dashboard">
       <div className="dashboard-head panel slim-panel">
         <div>
           <p className="eyebrow">{activeTab === "account" ? "Account" : "API keys"}</p>
-          <h2>{user?.email}</h2>
+          <h2>{displayEmail}</h2>
           <p className="muted">{activeTab === "account" ? "Manage your local portal session." : "Create app-specific keys with clear permission scopes."}</p>
         </div>
         <button type="button" className="ghost" onClick={onSignOut}>Sign out</button>
@@ -333,7 +384,13 @@ function Dashboard({
       {activeTab === "account" ? (
         <section className="panel account-panel">
           <p className="eyebrow">Account</p>
-          <h2>{user?.email}</h2>
+          <div className="identity-card">
+            {avatar ? <img src={avatar} alt="" /> : <span aria-hidden="true">{displayEmail.slice(0, 1).toUpperCase()}</span>}
+            <div>
+              <h2>{displayEmail}</h2>
+              <p className="muted">Signed in with {provider}.</p>
+            </div>
+          </div>
           <div className="account-grid">
             <div className="metric-card">
               <span>Plan</span>
