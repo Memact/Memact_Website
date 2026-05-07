@@ -635,7 +635,7 @@ function App() {
   const showAuth = !session
 
   return (
-    <main className="page">
+    <main className={showAuth ? "page page-auth" : "page"}>
       <header className="topbar">
         <a className="logo-link" href="https://www.memact.com/" aria-label="Go to memact.com">
           <img className="logo-img" src="/logo.png" alt="Memact" />
