@@ -4,6 +4,7 @@ import "./styles.css"
 import {
   AccessClient,
   AccessApiError,
+  ACCESS_MODE,
   ACCESS_URL
 } from "./memact-access-client.js"
 import { getAuthRedirectUrl, isSupabaseConfigured, requireSupabase, supabase } from "./supabase-client.js"
@@ -38,8 +39,8 @@ function App() {
 
   useEffect(() => {
     client.health()
-      .then(() => setStatus("Memact is online."))
-      .catch(() => setStatus("Start Memact locally to use the portal."))
+      .then(() => setStatus(ACCESS_MODE === "supabase" ? "Access is running through Supabase." : "Memact is online."))
+      .catch(() => setStatus(ACCESS_MODE === "supabase" ? "Apply the Access Supabase migration to use the portal." : "Start Memact locally to use the portal."))
     client.policy().then(setPolicy).catch(() => {})
   }, [client])
 
@@ -633,16 +634,14 @@ function Dashboard({
 async function refreshDashboard(client, session, setUser, setApps, setApiKeys, setConsents, setStatus, setError, setCanRetryDashboard) {
   setCanRetryDashboard(false)
   try {
-    const [me, appResult, keyResult, consentResult] = await Promise.all([
+    const [me, dashboard] = await Promise.all([
       client.me(session),
-      client.apps(session),
-      client.apiKeys(session),
-      client.consents(session)
+      client.dashboard(session)
     ])
     setUser(me.user)
-    setApps(appResult.apps)
-    setApiKeys(keyResult.api_keys)
-    setConsents(consentResult.consents)
+    setApps(dashboard.apps || [])
+    setApiKeys(dashboard.api_keys || [])
+    setConsents(dashboard.consents || [])
     setError("")
     setStatus("Dashboard synced.")
   } catch (error) {
@@ -656,15 +655,15 @@ async function refreshDashboard(client, session, setUser, setApps, setApiKeys, s
 function statusForAccessError(error) {
   if (error instanceof TypeError || /failed to fetch|networkerror|load failed/i.test(String(error?.message || ""))) {
     return {
-      message: "Could not reach Access. Make sure it is running.",
-      status: "Access offline."
+      message: ACCESS_MODE === "supabase" ? "Could not reach Supabase Access. Check the Website env vars and project settings." : "Could not reach Access. Make sure it is running.",
+      status: ACCESS_MODE === "supabase" ? "Supabase Access offline." : "Access offline."
     }
   }
   if (error instanceof AccessApiError) {
     if (error.status === 401) return { message: "Please sign in again.", status: "Login expired." }
     if (error.status === 403) return { message: "Access denied for this dashboard.", status: "Access denied." }
     if (error.status === 409) return { message: "This app already exists.", status: "Dashboard sync failed." }
-    if (error.status >= 500) return { message: "Access service had a server error. Check Access logs.", status: "Dashboard sync failed." }
+    if (error.status >= 500) return { message: ACCESS_MODE === "supabase" ? "Supabase Access needs the SQL migration or project setup." : "Access service had a server error. Check Access logs.", status: "Dashboard sync failed." }
   }
   return {
     message: error?.message || "Dashboard sync failed.",
@@ -691,6 +690,32 @@ function sameScopes(first = [], second = []) {
 }
 
 function buildEmbedCode(apiKey, scopes = []) {
+  if (ACCESS_MODE === "supabase") {
+    return `import { createClient } from "@supabase/supabase-js";
+import { createMemactCaptureClient } from "./memact-capture-client.mjs";
+
+const supabase = createClient("https://YOUR_PROJECT.supabase.co", "YOUR_PUBLIC_ANON_KEY");
+const memactApiKey = "${apiKey || "mka_key_shown_once"}";
+
+const { data: access } = await supabase.rpc("memact_verify_api_key", {
+  api_key_input: memactApiKey,
+  required_scopes_input: ${JSON.stringify(scopes, null, 2)}
+});
+
+if (!access?.allowed) {
+  throw new Error(access?.error?.message || "Memact access denied.");
+}
+
+const memact = createMemactCaptureClient({
+  apiKey: memactApiKey,
+  scopes: access.scopes
+});
+
+const { snapshot } = await memact.getLocalSnapshot();
+
+console.log(snapshot.counts);`
+  }
+
   return `import { createMemactCaptureClient } from "./memact-capture-client.mjs";
 
 const memact = createMemactCaptureClient({

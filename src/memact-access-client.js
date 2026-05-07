@@ -1,134 +1,76 @@
-export const ACCESS_URL = import.meta.env.VITE_MEMACT_ACCESS_URL || "http://127.0.0.1:8787"
-const SESSION_KEY = "memact.access.session"
+import { isSupabaseConfigured, requireSupabase } from "./supabase-client.js"
+import { AccessApiError, HttpAccessClient, LEGACY_ACCESS_URL } from "./legacy-access-http-client.js"
+import { SupabaseAccessClient } from "./supabase-access-client.js"
 
-export function getSessionToken() {
-  return localStorage.getItem(SESSION_KEY) || ""
-}
+export const ACCESS_MODE = isSupabaseConfigured ? "supabase" : "http"
+export const ACCESS_URL = ACCESS_MODE === "supabase" ? "supabase" : LEGACY_ACCESS_URL
 
-export function setSessionToken(token) {
-  if (token) {
-    localStorage.setItem(SESSION_KEY, token)
-  } else {
-    localStorage.removeItem(SESSION_KEY)
-  }
-}
-
-export class AccessApiError extends Error {
-  constructor(status, message, code = "request_failed", raw = null) {
-    super(message || "Request failed.")
-    this.name = "AccessApiError"
-    this.status = status
-    this.code = code
-    this.raw = raw
-  }
-}
+export { AccessApiError }
 
 export class AccessClient {
-  constructor(baseUrl) {
-    this.baseUrl = String(baseUrl || "").replace(/\/$/, "")
+  constructor(baseUrl = LEGACY_ACCESS_URL) {
+    this.impl = ACCESS_MODE === "supabase"
+      ? new SupabaseAccessClient(requireSupabase())
+      : new HttpAccessClient(baseUrl)
   }
 
-  health() {
-    return this.get("/health")
+  health(...args) {
+    return this.impl.health(...args)
   }
 
-  policy() {
-    return this.get("/v1/policy")
+  policy(...args) {
+    return this.impl.policy(...args)
   }
 
-  signup(body) {
-    return this.post("/v1/auth/signup", body)
+  signup(...args) {
+    return this.impl.signup(...args)
   }
 
-  signin(body) {
-    return this.post("/v1/auth/signin", body)
+  signin(...args) {
+    return this.impl.signin(...args)
   }
 
-  me(session) {
-    return this.get("/v1/me", session)
+  me(...args) {
+    return this.impl.me(...args)
   }
 
-  apps(session) {
-    return this.get("/v1/apps", session)
+  dashboard(...args) {
+    return this.impl.dashboard(...args)
   }
 
-  createApp(session, body) {
-    return this.post("/v1/apps", body, session)
+  apps(...args) {
+    return this.impl.apps(...args)
   }
 
-  deleteApp(session, appId) {
-    return this.delete(`/v1/apps/${encodeURIComponent(appId)}`, session)
+  createApp(...args) {
+    return this.impl.createApp(...args)
   }
 
-  apiKeys(session) {
-    return this.get("/v1/api-keys", session)
+  deleteApp(...args) {
+    return this.impl.deleteApp(...args)
   }
 
-  createApiKey(session, body) {
-    return this.post("/v1/api-keys", body, session)
+  apiKeys(...args) {
+    return this.impl.apiKeys(...args)
   }
 
-  revokeApiKey(session, keyId) {
-    return this.post("/v1/api-keys/revoke", { key_id: keyId }, session)
+  createApiKey(...args) {
+    return this.impl.createApiKey(...args)
   }
 
-  consents(session) {
-    return this.get("/v1/consents", session)
+  revokeApiKey(...args) {
+    return this.impl.revokeApiKey(...args)
   }
 
-  grantConsent(session, body) {
-    return this.post("/v1/consents", body, session)
+  consents(...args) {
+    return this.impl.consents(...args)
   }
 
-  verifyApiKey(apiKey, requiredScopes = []) {
-    return this.request("/v1/access/verify", {
-      method: "POST",
-      apiKey,
-      body: { required_scopes: requiredScopes }
-    })
+  grantConsent(...args) {
+    return this.impl.grantConsent(...args)
   }
 
-  async get(path, session = "") {
-    return this.request(path, { method: "GET", session })
-  }
-
-  async post(path, body, session = "") {
-    return this.request(path, { method: "POST", session, body })
-  }
-
-  async delete(path, session = "") {
-    return this.request(path, { method: "DELETE", session })
-  }
-
-  async request(path, { method, session = "", apiKey = "", body } = {}) {
-    const headers = { "Content-Type": "application/json" }
-    if (session) headers.Authorization = `Bearer ${session}`
-    if (apiKey) headers["X-Memact-API-Key"] = apiKey
-    const response = await fetch(`${this.baseUrl}${path}`, {
-      method,
-      headers,
-      body: body ? JSON.stringify(body) : undefined
-    })
-    const text = await response.text()
-    const data = parseResponseBody(text)
-    if (!response.ok) {
-      const errorPayload = data && typeof data === "object" ? data.error : null
-      throw new AccessApiError(
-        response.status,
-        errorPayload?.message || response.statusText || "Request failed.",
-        errorPayload?.code || "request_failed",
-        data
-      )
-    }
-    return data && typeof data === "object" ? data : {}
-  }
-}
-
-function parseResponseBody(text) {
-  if (!text) return {}
-  try {
-    return JSON.parse(text)
-  } catch {
-    return text
+  verifyApiKey(...args) {
+    return this.impl.verifyApiKey(...args)
   }
 }

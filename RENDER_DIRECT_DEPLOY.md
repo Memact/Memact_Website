@@ -4,8 +4,6 @@ Use this if Render Blueprint setup fails.
 
 This keeps Website as a Render Static Site on Render's CDN. It is not a downgrade from the Blueprint path.
 
-Deploy Access first, then Website.
-
 ## 1. Create The Static Site
 
 In Render:
@@ -24,13 +22,10 @@ Publish Directory: dist
 Add:
 
 ```text
-VITE_MEMACT_ACCESS_URL=https://memact-access.onrender.com
 VITE_SUPABASE_URL=<your Supabase project URL>
 VITE_SUPABASE_ANON_KEY=<your Supabase anon key>
 VITE_AUTH_REDIRECT_URL=https://memact.com/dashboard
 ```
-
-If your Access service URL is different, use that URL for `VITE_MEMACT_ACCESS_URL`.
 
 ## 3. Rewrite Rule
 
@@ -55,7 +50,7 @@ X-Frame-Options: DENY
 X-Content-Type-Options: nosniff
 Referrer-Policy: strict-origin-when-cross-origin
 Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=()
-Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://avatars.githubusercontent.com; connect-src 'self' https://*.supabase.co https://memact-access.onrender.com; frame-ancestors 'none'; base-uri 'self'; form-action 'self'
+Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://avatars.githubusercontent.com; connect-src 'self' https://*.supabase.co; frame-ancestors 'none'; base-uri 'self'; form-action 'self'
 Strict-Transport-Security: max-age=31536000; includeSubDomains
 ```
 
@@ -100,6 +95,15 @@ https://memact-website.onrender.com/dashboard
 ```
 
 If Render gives the Website a different `.onrender.com` URL, add that exact dashboard URL too.
+
+Before testing the portal, apply the Access SQL migration from:
+
+```text
+../Access/supabase/migrations/20260507120000_memact_access.sql
+```
+
+That migration turns Supabase into the Access backend, so Website no longer
+needs a separate hosted Access service.
 
 For GitHub OAuth, the GitHub callback URL belongs to Supabase:
 
