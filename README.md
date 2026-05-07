@@ -115,32 +115,40 @@ If Blueprint setup fails, use the direct Dashboard path in
 ## App Embed Shape
 
 After creating an API key, Website shows a ready-to-copy embed snippet and a
-`Test key` button. The code shape is:
+`Test key` button. App developers do not create their own Supabase project for
+Memact access; the snippet uses Memact's public Access endpoint and the scoped
+API key created in this portal.
+
+The code shape is:
 
 ```js
-import { createClient } from "@supabase/supabase-js";
-import { createMemactCaptureClient } from "./memact-capture-client.mjs";
+const MEMACT_ACCESS_URL = "shown-in-the-memact-portal";
+const MEMACT_PUBLIC_KEY = "shown-in-the-memact-portal";
+const memactApiKey = "mka_key_shown_once";
 
-const supabase = createClient("https://YOUR_PROJECT.supabase.co", "YOUR_PUBLIC_ANON_KEY");
-
-const memact = createMemactCaptureClient({
-  apiKey: "mka_key_shown_once"
+const response = await fetch(`${MEMACT_ACCESS_URL}/rest/v1/rpc/memact_verify_api_key`, {
+  method: "POST",
+  headers: {
+    apikey: MEMACT_PUBLIC_KEY,
+    Authorization: `Bearer ${MEMACT_PUBLIC_KEY}`,
+    "Content-Type": "application/json"
+  },
+  body: JSON.stringify({
+    api_key_input: memactApiKey,
+    required_scopes_input: ["capture:webpage", "schema:write"]
+  })
 });
 
-const { data: access } = await supabase.rpc("memact_verify_api_key", {
-  api_key_input: "mka_key_shown_once",
-  required_scopes_input: ["capture:webpage", "schema:write", "graph:write", "memory:write", "memory:read_summary"]
-});
+const access = await response.json();
 
 if (!access?.allowed) throw new Error(access?.error?.message || "Memact access denied.");
 
-const { snapshot } = await memact.getLocalSnapshot();
-
-console.log(snapshot.counts);
+console.log("Memact access granted", access.scopes);
 ```
 
-The API key is verified by the Supabase-backed Access layer before the app can
-read from the local Capture bridge.
+The API key is verified by Memact before an app can use allowed capture,
+schema, graph, or memory permissions. The app receives only the scopes the user
+saved for that app.
 
 ## License
 

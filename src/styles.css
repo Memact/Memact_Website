@@ -22,6 +22,14 @@ html {
   box-sizing: border-box;
 }
 
+main,
+section,
+div,
+article,
+header {
+  min-width: 0;
+}
+
 body {
   margin: 0;
   min-width: 320px;
@@ -177,6 +185,7 @@ button:disabled {
   margin: 0;
   line-height: 0.98;
   letter-spacing: -0.055em;
+  overflow-wrap: anywhere;
 }
 
 .hero-copy h1 {
@@ -223,6 +232,7 @@ button:disabled {
 
 .tooltip-wrap {
   display: inline-flex;
+  min-width: 0;
 }
 
 .section-toolbar {
@@ -244,6 +254,10 @@ button:disabled {
   padding-inline: 1.25rem;
   color: var(--text);
   background: rgba(255, 255, 255, 0.08);
+}
+
+.section-toolbar button {
+  min-height: 52px;
 }
 
 .danger {
@@ -351,6 +365,7 @@ button:disabled {
   display: grid;
   gap: 1rem;
   padding-top: 34px;
+  overflow-x: hidden;
 }
 
 .access-layout {
@@ -565,6 +580,18 @@ textarea:focus {
   display: flex;
   align-items: center;
   gap: 1rem;
+  min-width: 0;
+}
+
+.identity-card > div {
+  min-width: 0;
+}
+
+.dashboard-head h2,
+.identity-card h2 {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .identity-card img,
@@ -581,6 +608,7 @@ textarea:focus {
 
 .identity-card span {
   display: inline-grid;
+  flex: 0 0 auto;
   place-items: center;
   color: #00011b;
   background: #ffffff;
@@ -613,6 +641,7 @@ textarea:focus {
 
 .metric-card strong {
   font-size: clamp(1.15rem, 2vw, 1.65rem);
+  overflow-wrap: anywhere;
 }
 
 .key-panel {
@@ -676,8 +705,14 @@ textarea:focus {
     width: 100%;
   }
 
+  .section-actions .tooltip-wrap,
   .section-actions button {
-    flex: 1 1 194px;
+    width: 100%;
+  }
+
+  .section-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .topbar {
@@ -734,6 +769,17 @@ textarea:focus {
     justify-content: stretch;
     margin-top: 0.75rem;
   }
+
+  .section-toolbar {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    width: 100%;
+  }
+
+  .section-toolbar button {
+    width: 100%;
+    min-width: 0;
+  }
 }
 
 @media (max-width: 540px) {
@@ -779,6 +825,54 @@ textarea:focus {
     border-radius: 28px;
   }
 
+  .dashboard {
+    gap: 0.85rem;
+    padding-top: 18px;
+  }
+
+  .dashboard-head {
+    gap: 1.1rem;
+  }
+
+  .dashboard-head h2,
+  .identity-card h2 {
+    font-size: 1.55rem;
+    line-height: 1.08;
+  }
+
+  .identity-card {
+    display: grid;
+    grid-template-columns: 1fr;
+    align-items: center;
+    justify-items: start;
+  }
+
+  .identity-card img,
+  .identity-card span {
+    width: 56px;
+    height: 56px;
+  }
+
+  .section-toolbar {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.65rem;
+  }
+
+  .section-toolbar > *:only-child {
+    grid-column: 1 / -1;
+  }
+
+  .section-actions {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.65rem;
+  }
+
+  .section-actions button,
+  .section-toolbar button {
+    padding-inline: 0.7rem;
+    font-size: 0.95rem;
+  }
+
   button,
   input,
   textarea {
@@ -789,5 +883,12 @@ textarea:focus {
   textarea {
     border-radius: 20px;
     padding: 0.95rem 1rem;
+  }
+}
+
+@media (max-width: 360px) {
+  .section-actions,
+  .section-toolbar {
+    grid-template-columns: 1fr;
   }
 }

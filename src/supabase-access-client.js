@@ -92,10 +92,18 @@ export class SupabaseAccessClient {
   }
 
   async verifyApiKey(apiKey, requiredScopes = []) {
-    const result = await this.rpc("memact_verify_api_key", {
-      api_key_input: apiKey,
-      required_scopes_input: requiredScopes
-    })
+    let result
+    try {
+      result = await this.rpc("memact_verify_api_key", {
+        api_key_input: apiKey,
+        required_scopes_input: requiredScopes
+      })
+    } catch (error) {
+      if (!isLegacyAccessCryptoError(error)) {
+        throw error
+      }
+      result = await this.verifyApiKeyFallback(apiKey, requiredScopes)
+    }
     if (!result?.allowed) {
       throw new AccessApiError(403, result?.error?.message || "Access denied.", result?.error?.code || "scope_denied", result)
     }
@@ -161,6 +169,79 @@ export class SupabaseAccessClient {
       key: rawKey
     }
   }
+
+  async verifyApiKeyFallback(apiKey, requiredScopes = []) {
+    const keyHash = await sha256Hex(apiKey || "")
+    const { data: key, error: keyError } = await this.supabase
+      .from("memact_api_keys")
+      .select("id, app_id, owner_user_id, name, key_prefix, scopes, created_at, last_used_at, revoked_at")
+      .eq("key_hash", keyHash)
+      .is("revoked_at", null)
+      .maybeSingle()
+
+    if (keyError) {
+      throw new AccessApiError(500, keyError.message || "Could not verify the API key.", "api_key_lookup_failed", keyError)
+    }
+    if (!key?.id) {
+      return denied("invalid_api_key", "API key is invalid or revoked.")
+    }
+
+    const { data: app, error: appError } = await this.supabase
+      .from("memact_apps")
+      .select("id, name, slug, description, owner_user_id, revoked_at")
+      .eq("id", key.app_id)
+      .is("revoked_at", null)
+      .maybeSingle()
+
+    if (appError) {
+      throw new AccessApiError(500, appError.message || "Could not verify the app.", "app_lookup_failed", appError)
+    }
+    if (!app?.id) {
+      return denied("app_revoked", "App is missing or revoked.")
+    }
+
+    const { data: consent, error: consentError } = await this.supabase
+      .from("memact_consents")
+      .select("id, scopes, revoked_at")
+      .eq("app_id", key.app_id)
+      .eq("user_id", key.owner_user_id)
+      .is("revoked_at", null)
+      .maybeSingle()
+
+    if (consentError) {
+      throw new AccessApiError(500, consentError.message || "Could not verify permissions.", "consent_lookup_failed", consentError)
+    }
+    if (!consent?.id) {
+      return denied("consent_missing", "User permissions are missing for this app.")
+    }
+
+    const keyScopes = Array.isArray(key.scopes) ? key.scopes : []
+    const consentScopes = Array.isArray(consent.scopes) ? consent.scopes : []
+    const effectiveScopes = keyScopes.filter((scope) => consentScopes.includes(scope))
+    const missingScopes = requiredScopes.filter((scope) => !effectiveScopes.includes(scope))
+
+    if (missingScopes.length) {
+      return {
+        allowed: false,
+        app,
+        key: { id: key.id, key_prefix: key.key_prefix, scopes: keyScopes },
+        scopes: effectiveScopes,
+        missing_scopes: missingScopes,
+        error: {
+          code: "scope_denied",
+          message: "API key or user permissions do not include the requested scopes."
+        }
+      }
+    }
+
+    return {
+      allowed: true,
+      app,
+      key: { id: key.id, key_prefix: key.key_prefix, scopes: keyScopes },
+      scopes: effectiveScopes,
+      missing_scopes: []
+    }
+  }
 }
 
 function mapSupabaseRpcError(error) {
@@ -177,14 +258,27 @@ function mapSupabaseRpcError(error) {
   if (/API key not found/i.test(message)) {
     return new AccessApiError(404, "API key not found.", "api_key_not_found", error)
   }
-  if (/gen_random_bytes\(integer\) does not exist/i.test(message)) {
-    return new AccessApiError(500, "Memact is using an older API-key function. A browser-safe fallback will be used.", "legacy_api_key_entropy", error)
+  if (/gen_random_bytes\(integer\) does not exist|digest\(text,\s*unknown\) does not exist/i.test(message)) {
+    return new AccessApiError(500, "Memact is using an older Access crypto function. A browser-safe fallback will be used.", "legacy_access_crypto", error)
   }
   return new AccessApiError(500, message || "Supabase Access request failed.", error?.code || "rpc_failed", error)
 }
 
 function isLegacyApiKeyEntropyError(error) {
-  return error instanceof AccessApiError && error.code === "legacy_api_key_entropy"
+  return isLegacyAccessCryptoError(error)
+}
+
+function isLegacyAccessCryptoError(error) {
+  return error instanceof AccessApiError && error.code === "legacy_access_crypto"
+}
+
+function denied(code, message) {
+  return {
+    allowed: false,
+    scopes: [],
+    missing_scopes: [],
+    error: { code, message }
+  }
 }
 
 function createBrowserApiKey() {

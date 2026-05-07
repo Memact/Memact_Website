@@ -7,7 +7,7 @@ import {
   ACCESS_MODE,
   ACCESS_URL
 } from "./memact-access-client.js"
-import { getAuthRedirectUrl, isSupabaseConfigured, requireSupabase, supabase } from "./supabase-client.js"
+import { getAuthRedirectUrl, isSupabaseConfigured, requireSupabase, supabase, SUPABASE_ANON_KEY, SUPABASE_URL } from "./supabase-client.js"
 import { hasDuplicateAppName } from "./app-name.js"
 import { defaultScopesForPolicy, normalizeSelectedScopes } from "./access-policy.js"
 
@@ -35,6 +35,8 @@ function App() {
   const [selectedAppId, setSelectedAppId] = useState("")
   const [selectedScopes, setSelectedScopes] = useState(() => defaultScopesForPolicy(null))
   const [oneTimeKey, setOneTimeKey] = useState("")
+  const [oneTimeKeyId, setOneTimeKeyId] = useState("")
+  const [oneTimeKeyScopes, setOneTimeKeyScopes] = useState([])
   const [apiTestResult, setApiTestResult] = useState("")
   const [showAppForm, setShowAppForm] = useState(false)
   const [setupPassword, setSetupPassword] = useState("")
@@ -141,6 +143,14 @@ function App() {
       setSelectedAppId(apps[0].id)
     }
   }, [apps, selectedAppId])
+
+  function handleSelectApp(appId) {
+    setSelectedAppId(appId)
+    setOneTimeKey("")
+    setOneTimeKeyId("")
+    setOneTimeKeyScopes([])
+    setApiTestResult("")
+  }
 
   useEffect(() => {
     if (!selectedAppId) return
@@ -335,10 +345,12 @@ function App() {
     const cleanName = newAppName.trim()
     if (!cleanName) {
       setError("App name is required.")
+      scrollElementIntoView("error-message")
       return
     }
     if (hasDuplicateAppName(apps, cleanName)) {
       setError("You already have an app with this name.")
+      scrollElementIntoView("error-message")
       return
     }
     try {
@@ -351,10 +363,16 @@ function App() {
       setShowAppForm(false)
       setNewAppName("")
       setNewAppDescription("")
+      setOneTimeKey("")
+      setOneTimeKeyId("")
+      setOneTimeKeyScopes([])
+      setApiTestResult("")
       setStatus("App created.")
+      scrollElementIntoView("permissions-panel")
     } catch (appError) {
       setError(appError.message)
       setStatus(statusForAccessError(appError).status)
+      scrollElementIntoView("error-message")
     }
   }
 
@@ -376,12 +394,16 @@ function App() {
       await client.deleteApp(session, selectedAppId)
       setSelectedAppId("")
       setOneTimeKey("")
+      setOneTimeKeyId("")
+      setOneTimeKeyScopes([])
       setApiTestResult("")
       await refreshDashboard(client, session, setUser, setApps, setApiKeys, setConsents, setStatus, setError, setCanRetryDashboard)
       setStatus("App deleted.")
+      scrollElementIntoView("app-panel")
     } catch (deleteError) {
       setError(deleteError.message)
       setStatus(statusForAccessError(deleteError).status)
+      scrollElementIntoView("error-message")
     }
   }
 
@@ -391,26 +413,35 @@ function App() {
       await client.grantConsent(session, { app_id: selectedAppId, scopes: normalizeSelectedScopes(selectedScopes, policy) })
       await refreshDashboard(client, session, setUser, setApps, setApiKeys, setConsents, setStatus, setError, setCanRetryDashboard)
       setStatus("Permissions saved.")
+      scrollElementIntoView("permissions-panel")
     } catch (consentError) {
       setError(consentError.message)
+      scrollElementIntoView("error-message")
     }
   }
 
   async function handleCreateKey() {
     setError("")
     setOneTimeKey("")
+    setOneTimeKeyId("")
+    setOneTimeKeyScopes([])
+    const keyScopes = normalizeSelectedScopes(selectedScopes, policy)
     try {
       const result = await client.createApiKey(session, {
         app_id: selectedAppId,
         name: "Default app key",
-        scopes: normalizeSelectedScopes(selectedScopes, policy)
+        scopes: keyScopes
       })
-      setOneTimeKey(result.key)
-      setApiTestResult("")
       await refreshDashboard(client, session, setUser, setApps, setApiKeys, setConsents, setStatus, setError, setCanRetryDashboard)
+      setOneTimeKey(result.key)
+      setOneTimeKeyId(result.api_key?.id || "")
+      setOneTimeKeyScopes(keyScopes)
+      setApiTestResult("")
       setStatus("API key created. Copy it now.")
+      scrollElementIntoView("one-time-key-panel")
     } catch (keyError) {
       setError(keyError.message)
+      scrollElementIntoView("error-message")
     }
   }
 
@@ -418,10 +449,18 @@ function App() {
     setError("")
     try {
       await client.revokeApiKey(session, keyId)
+      if (keyId === oneTimeKeyId) {
+        setOneTimeKey("")
+        setOneTimeKeyId("")
+        setOneTimeKeyScopes([])
+        setApiTestResult("")
+      }
       await refreshDashboard(client, session, setUser, setApps, setApiKeys, setConsents, setStatus, setError, setCanRetryDashboard)
       setStatus("API key revoked.")
+      scrollElementIntoView("api-keys-panel")
     } catch (keyError) {
       setError(keyError.message)
+      scrollElementIntoView("error-message")
     }
   }
 
@@ -441,13 +480,15 @@ function App() {
     setApiTestResult("")
     setStatus("Testing API key.")
     try {
-      const result = await client.verifyApiKey(oneTimeKey, normalizeSelectedScopes(selectedScopes, policy))
+      const result = await client.verifyApiKey(oneTimeKey, oneTimeKeyScopes)
       const verifiedScopes = Array.isArray(result.scopes) ? result.scopes : []
       setApiTestResult(`Verified for ${verifiedScopes.length} scope${verifiedScopes.length === 1 ? "" : "s"}.`)
       setStatus("API key works.")
+      scrollElementIntoView("one-time-key-panel")
     } catch (testError) {
       setError(testError.message)
       setStatus("API key test failed.")
+      scrollElementIntoView("error-message")
     }
   }
 
@@ -469,6 +510,8 @@ function App() {
     setApiKeys([])
     setConsents([])
     setOneTimeKey("")
+    setOneTimeKeyId("")
+    setOneTimeKeyScopes([])
     setApiTestResult("")
     setActiveTab("login")
     setStatus("Signed out.")
@@ -493,7 +536,7 @@ function App() {
         <span className="status-pill">{status}</span>
       </header>
 
-      {error ? <p className="error" role="alert">{error} {canRetryDashboard ? <button type="button" className="inline-retry" onClick={handleRetryDashboard}>Retry</button> : null}</p> : null}
+      {error ? <p id="error-message" className="error" role="alert">{error} {canRetryDashboard ? <button type="button" className="inline-retry" onClick={handleRetryDashboard}>Retry</button> : null}</p> : null}
       {authChecking ? <p className="status-line">Checking login.</p> : null}
 
       {session ? (
@@ -510,9 +553,10 @@ function App() {
           newAppName={newAppName}
           newAppDescription={newAppDescription}
           oneTimeKey={oneTimeKey}
+          oneTimeKeyScopes={oneTimeKeyScopes}
           apiTestResult={apiTestResult}
           showAppForm={showAppForm}
-          setSelectedAppId={setSelectedAppId}
+          setSelectedAppId={handleSelectApp}
           setSelectedScopes={setSelectedScopes}
           setNewAppName={setNewAppName}
           setNewAppDescription={setNewAppDescription}
@@ -621,6 +665,7 @@ function Dashboard({
   newAppName,
   newAppDescription,
   oneTimeKey,
+  oneTimeKeyScopes,
   apiTestResult,
   showAppForm,
   setSelectedAppId,
@@ -807,7 +852,7 @@ function Dashboard({
         </section>
       ) : (
         <>
-          <section className="panel app-workspace">
+          <section id="app-panel" className="panel app-workspace">
             <div className="section-head">
               <div>
                 <p className="eyebrow">App</p>
@@ -857,7 +902,7 @@ function Dashboard({
           </section>
 
           <div className="access-layout">
-            <section className="panel">
+            <section id="permissions-panel" className="panel">
               <div className="section-head">
                 <div className="section-copy">
                   <p className="eyebrow">Permissions</p>
@@ -898,7 +943,7 @@ function Dashboard({
               </div>
             </section>
 
-            <section className="panel">
+            <section id="api-keys-panel" className="panel">
               <p className="eyebrow">API keys</p>
               <div className="stack">
                 {selectedKeys.length ? selectedKeys.map((key) => (
@@ -917,7 +962,7 @@ function Dashboard({
       )}
 
       {oneTimeKey ? (
-        <section className="panel key-panel">
+        <section id="one-time-key-panel" className="panel key-panel">
           <div>
             <p className="eyebrow">Copy now</p>
             <h2>One-time API key</h2>
@@ -932,7 +977,7 @@ function Dashboard({
           {apiTestResult ? <p className="success" role="status">{apiTestResult}</p> : null}
           <div className="embed-code">
             <p className="eyebrow">Embed</p>
-            <pre><code>{buildEmbedCode(oneTimeKey, selectedScopes)}</code></pre>
+            <pre><code>{buildEmbedCode(oneTimeKey, oneTimeKeyScopes)}</code></pre>
           </div>
           <p className="muted">Memact stores only a hash. This raw key cannot be shown again.</p>
         </section>
@@ -1061,31 +1106,46 @@ function sameScopes(first = [], second = []) {
   return firstList.length === secondList.length && firstList.every((scope, index) => scope === secondList[index])
 }
 
+function scrollElementIntoView(id) {
+  if (typeof window === "undefined") return
+  window.requestAnimationFrame(() => {
+    document.getElementById(id)?.scrollIntoView({
+      behavior: "smooth",
+      block: "start"
+    })
+  })
+}
+
 function buildEmbedCode(apiKey, scopes = []) {
   if (ACCESS_MODE === "supabase") {
-    return `import { createClient } from "@supabase/supabase-js";
-import { createMemactCaptureClient } from "./memact-capture-client.mjs";
-
-const supabase = createClient("https://YOUR_PROJECT.supabase.co", "YOUR_PUBLIC_ANON_KEY");
+    const accessUrl = SUPABASE_URL || "https://memact.supabase.co"
+    const publicKey = SUPABASE_ANON_KEY || "MEMACT_PUBLIC_ANON_KEY"
+    return `const MEMACT_ACCESS_URL = "${accessUrl}";
+const MEMACT_PUBLIC_KEY = "${publicKey}";
 const memactApiKey = "${apiKey || "mka_key_shown_once"}";
 
-const { data: access } = await supabase.rpc("memact_verify_api_key", {
-  api_key_input: memactApiKey,
-  required_scopes_input: ${JSON.stringify(scopes, null, 2)}
+const response = await fetch(\`\${MEMACT_ACCESS_URL}/rest/v1/rpc/memact_verify_api_key\`, {
+  method: "POST",
+  headers: {
+    "apikey": MEMACT_PUBLIC_KEY,
+    "Authorization": \`Bearer \${MEMACT_PUBLIC_KEY}\`,
+    "Content-Type": "application/json"
+  },
+  body: JSON.stringify({
+    api_key_input: memactApiKey,
+    required_scopes_input: ${JSON.stringify(scopes, null, 2)}
+  })
 });
 
+const access = await response.json();
 if (!access?.allowed) {
   throw new Error(access?.error?.message || "Memact access denied.");
 }
 
-const memact = createMemactCaptureClient({
-  apiKey: memactApiKey,
+console.log("Memact access granted", {
+  app: access.app?.name,
   scopes: access.scopes
-});
-
-const { snapshot } = await memact.getLocalSnapshot();
-
-console.log(snapshot.counts);`
+});`
   }
 
   return `import { createMemactCaptureClient } from "./memact-capture-client.mjs";
