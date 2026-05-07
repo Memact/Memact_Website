@@ -19,6 +19,7 @@ function App() {
   const [activeTab, setActiveTab] = useState(window.location.pathname === "/dashboard" ? "access" : "login")
   const [user, setUser] = useState(null)
   const [email, setEmail] = useState("")
+  const [password, setPassword] = useState("")
   const [authLoading, setAuthLoading] = useState("")
   const [authNotice, setAuthNotice] = useState("")
   const [status, setStatus] = useState("Checking Access.")
@@ -35,7 +36,12 @@ function App() {
   const [oneTimeKey, setOneTimeKey] = useState("")
   const [apiTestResult, setApiTestResult] = useState("")
   const [showAppForm, setShowAppForm] = useState(false)
+  const [setupPassword, setSetupPassword] = useState("")
+  const [setupPasswordConfirm, setSetupPasswordConfirm] = useState("")
+  const [passwordSuccess, setPasswordSuccess] = useState("")
   const session = authSession?.access_token || ""
+  const passwordState = useMemo(() => getPasswordState(setupPassword, setupPasswordConfirm), [setupPassword, setupPasswordConfirm])
+  const needsPasswordSetup = Boolean(authUser && shouldOfferPasswordSetup(authUser))
 
   useEffect(() => {
     client.health()
@@ -75,7 +81,7 @@ function App() {
       setAuthSession(nextSession)
       setAuthUser(nextSession?.user || null)
       if (nextSession) {
-        setActiveTab("access")
+        setActiveTab(shouldOfferPasswordSetup(nextSession.user) ? "account" : "access")
         window.history.replaceState({}, "", "/dashboard")
       }
     })
@@ -85,6 +91,12 @@ function App() {
       subscription?.subscription?.unsubscribe()
     }
   }, [])
+
+  useEffect(() => {
+    if (!session || !needsPasswordSetup) return
+    setActiveTab("account")
+    setStatus("Set a password to make your next login faster.")
+  }, [needsPasswordSetup, session])
 
   useEffect(() => {
     const tabName = activeTab === "account" ? "Account" : activeTab === "access" ? "API Keys" : "Login"
@@ -141,6 +153,44 @@ function App() {
     }
   }
 
+  async function handlePasswordLogin(event) {
+    event.preventDefault()
+    setError("")
+    setAuthNotice("")
+    setPasswordSuccess("")
+    setAuthLoading("password")
+    setStatus("Signing in.")
+    try {
+      const auth = requireSupabase()
+      const { data, error: signInError } = await auth.auth.signInWithPassword({
+        email,
+        password
+      })
+      if (signInError) throw signInError
+      setPassword("")
+      const signedInUser = data?.user
+      if (signedInUser && !signedInUser.user_metadata?.memact_password_ready) {
+        const { data: updated, error: updateError } = await auth.auth.updateUser({
+          data: {
+            ...signedInUser.user_metadata,
+            memact_password_ready: true,
+            memact_password_updated_at: new Date().toISOString()
+          }
+        })
+        if (updateError) throw updateError
+        if (updated?.user) {
+          setAuthUser(updated.user)
+        }
+      }
+      setStatus("Signed in.")
+    } catch (authError) {
+      setError(passwordLoginErrorMessage(authError))
+      setStatus(authStatusMessage(authError))
+    } finally {
+      setAuthLoading("")
+    }
+  }
+
   async function handleGithubLogin() {
     setError("")
     setAuthNotice("")
@@ -157,6 +207,42 @@ function App() {
     } catch (authError) {
       setError(authError.message)
       setStatus(authStatusMessage(authError))
+      setAuthLoading("")
+    }
+  }
+
+  async function handleSetPassword(event) {
+    event.preventDefault()
+    setError("")
+    setPasswordSuccess("")
+    const validationMessage = passwordState.errors[0] || ""
+    if (validationMessage) {
+      setError(validationMessage)
+      return
+    }
+    setAuthLoading("set-password")
+    setStatus("Saving password.")
+    try {
+      const { data, error: updateError } = await requireSupabase().auth.updateUser({
+        password: setupPassword,
+        data: {
+          ...(authUser?.user_metadata || {}),
+          memact_password_ready: true,
+          memact_password_updated_at: new Date().toISOString()
+        }
+      })
+      if (updateError) throw updateError
+      if (data?.user) {
+        setAuthUser(data.user)
+      }
+      setSetupPassword("")
+      setSetupPasswordConfirm("")
+      setPasswordSuccess("Password saved. Next time you can sign in with email and password.")
+      setStatus("Password ready.")
+    } catch (passwordError) {
+      setError(passwordSetupErrorMessage(passwordError))
+      setStatus(authStatusMessage(passwordError))
+    } finally {
       setAuthLoading("")
     }
   }
@@ -358,15 +444,27 @@ function App() {
           onCopyKey={copyOneTimeKey}
           onTestKey={testOneTimeKey}
           onSignOut={signOut}
+          authLoading={authLoading}
+          needsPasswordSetup={needsPasswordSetup}
+          setupPassword={setupPassword}
+          setupPasswordConfirm={setupPasswordConfirm}
+          passwordState={passwordState}
+          passwordSuccess={passwordSuccess}
+          setSetupPassword={setSetupPassword}
+          setSetupPasswordConfirm={setSetupPasswordConfirm}
+          onSetPassword={handleSetPassword}
         />
       ) : (
         <Landing
           showAuth={showAuth}
           email={email}
+          password={password}
           authLoading={authLoading}
           authNotice={authNotice}
           setEmail={setEmail}
+          setPassword={setPassword}
           onEmailLogin={handleEmailLogin}
+          onPasswordLogin={handlePasswordLogin}
           onGithubLogin={handleGithubLogin}
         />
       )}
@@ -374,7 +472,7 @@ function App() {
   )
 }
 
-function Landing({ showAuth, email, authLoading, authNotice, setEmail, onEmailLogin, onGithubLogin }) {
+function Landing({ showAuth, email, password, authLoading, authNotice, setEmail, setPassword, onEmailLogin, onPasswordLogin, onGithubLogin }) {
   return (
     <section className={showAuth ? "landing landing-with-auth" : "landing"}>
       <div className="hero-copy">
@@ -391,17 +489,25 @@ function Landing({ showAuth, email, authLoading, authNotice, setEmail, onEmailLo
           <p className="eyebrow">Login</p>
           <h2>Login.</h2>
           <p className="muted">
-            Enter your email and Memact will send a secure login link.
+            Use your email and password, or start with a secure email link and set a password right after.
           </p>
           {authNotice ? <p className="success" role="status">{authNotice}</p> : null}
-          <form className="form" onSubmit={onEmailLogin}>
+          <form className="form" onSubmit={onPasswordLogin}>
             <label>
               Email
               <input value={email} type="email" inputMode="email" autoComplete="email" onChange={(event) => setEmail(event.target.value)} required />
             </label>
-            <button type="submit" disabled={authLoading === "email"}>
-              {authLoading === "email" ? "Sending link..." : "Continue with Email"}
+            <label>
+              Password
+              <input value={password} type="password" autoComplete="current-password" placeholder="Enter your password" onChange={(event) => setPassword(event.target.value)} required />
+            </label>
+            <button type="submit" disabled={authLoading === "password"}>
+              {authLoading === "password" ? "Signing in..." : "Continue with Password"}
             </button>
+            <button type="button" className="ghost" disabled={authLoading === "email"} onClick={onEmailLogin}>
+              {authLoading === "email" ? "Sending link..." : "Email me a login link"}
+            </button>
+            <div className="auth-divider" aria-hidden="true"><span>or</span></div>
             <button type="button" className="ghost" disabled={authLoading === "github"} onClick={onGithubLogin}>
               {authLoading === "github" ? "Opening GitHub..." : "Continue with GitHub"}
             </button>
@@ -439,7 +545,16 @@ function Dashboard({
   onRevokeKey,
   onCopyKey,
   onTestKey,
-  onSignOut
+  onSignOut,
+  authLoading,
+  needsPasswordSetup,
+  setupPassword,
+  setupPasswordConfirm,
+  passwordState,
+  passwordSuccess,
+  setSetupPassword,
+  setSetupPasswordConfirm,
+  onSetPassword
 }) {
   const hasApps = apps.length > 0
   const isCreatingApp = showAppForm || !hasApps
@@ -497,6 +612,58 @@ function Dashboard({
           <p className="muted">
             Permissions mean you choose exactly which actions a registered app can ask Memact to perform. If a scope is not saved for that app, its API key cannot use that permission.
           </p>
+          {provider === "email" ? (
+            <section className="password-panel">
+              <div>
+                <p className="eyebrow">Password</p>
+                <h2>{needsPasswordSetup ? "Set a password." : "Update your password."}</h2>
+                <p className="muted">
+                  {needsPasswordSetup
+                    ? "You are signed in through the email link. Set a strong password now so the next login is faster."
+                    : "Keep a strong password on this account so you can sign in without requesting a new link."}
+                </p>
+              </div>
+              {passwordSuccess ? <p className="success" role="status">{passwordSuccess}</p> : null}
+              <form className="form" onSubmit={onSetPassword}>
+                <label>
+                  New password
+                  <input
+                    value={setupPassword}
+                    type="password"
+                    autoComplete="new-password"
+                    placeholder="Create a strong password"
+                    onChange={(event) => setSetupPassword(event.target.value)}
+                    required
+                  />
+                </label>
+                <label>
+                  Confirm password
+                  <input
+                    value={setupPasswordConfirm}
+                    type="password"
+                    autoComplete="new-password"
+                    placeholder="Repeat the password"
+                    onChange={(event) => setSetupPasswordConfirm(event.target.value)}
+                    required
+                  />
+                </label>
+                <div className="password-strength" data-strength={passwordState.level}>
+                  <div className="password-strength-bar">
+                    <span style={{ width: `${passwordState.percent}%` }} />
+                  </div>
+                  <strong>{passwordState.label}</strong>
+                </div>
+                <ul className="password-rules" aria-label="Password requirements">
+                  {passwordState.checks.map((check) => (
+                    <li key={check.label} className={check.ok ? "is-passed" : ""}>{check.label}</li>
+                  ))}
+                </ul>
+                <button type="submit" disabled={!passwordState.canSubmit || authLoading === "set-password"}>
+                  {authLoading === "set-password" ? "Saving password..." : needsPasswordSetup ? "Save password" : "Update password"}
+                </button>
+              </form>
+            </section>
+          ) : null}
         </section>
       ) : (
         <>
@@ -681,6 +848,56 @@ function authStatusMessage(error) {
     return "Supabase env vars are missing."
   }
   return "Login did not finish."
+}
+
+function passwordLoginErrorMessage(error) {
+  const message = String(error?.message || "")
+  if (/invalid login credentials/i.test(message)) {
+    return "Email or password did not match. You can use the email link if this is your first login."
+  }
+  return message || "Password login did not finish."
+}
+
+function passwordSetupErrorMessage(error) {
+  const message = String(error?.message || "")
+  if (/same password/i.test(message)) {
+    return "Choose a new password that is different from the last one."
+  }
+  if (/password/i.test(message) && /weak|short|strength/i.test(message)) {
+    return "Use a stronger password before saving it."
+  }
+  return message || "Password setup did not finish."
+}
+
+function shouldOfferPasswordSetup(user) {
+  if (!user) return false
+  const provider = user.app_metadata?.provider || user.identities?.[0]?.provider || "email"
+  if (provider !== "email") return false
+  return !Boolean(user.user_metadata?.memact_password_ready)
+}
+
+function getPasswordState(password, confirmPassword) {
+  const checks = [
+    { label: "At least 12 characters", ok: password.length >= 12 },
+    { label: "One uppercase letter", ok: /[A-Z]/.test(password) },
+    { label: "One lowercase letter", ok: /[a-z]/.test(password) },
+    { label: "One number", ok: /\d/.test(password) },
+    { label: "One special character", ok: /[^A-Za-z0-9]/.test(password) },
+    { label: "Passwords match", ok: password.length > 0 && password === confirmPassword }
+  ]
+  const passedCount = checks.filter((check) => check.ok).length
+  const percent = Math.round((passedCount / checks.length) * 100)
+  const level = percent >= 100 ? "strong" : percent >= 67 ? "good" : percent >= 34 ? "fair" : "weak"
+  const label = level === "strong" ? "Strong password" : level === "good" ? "Good password" : level === "fair" ? "Needs more strength" : "Weak password"
+  const errors = checks.filter((check) => !check.ok).map((check) => check.label)
+  return {
+    checks,
+    percent,
+    level,
+    label,
+    errors,
+    canSubmit: errors.length === 0
+  }
 }
 
 function sameScopes(first = [], second = []) {
